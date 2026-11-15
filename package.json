@@ -1,0 +1,82 @@
+{
+  "name": "dsh-git-bug",
+  "version": "0.1.0",
+  "description": "Manage git-bug issues (and use them as a shared, persistent task list) from DeepSeek Harness.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "src",
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "flake.nix",
+    "scripts"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.2-0 <0.3.0"
+  },
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "check": "node scripts/build-client.mjs && node --test \"tests/*.test.mjs\""
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "kind": "plugin",
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "capabilities": [
+      "tools:register",
+      "system-prompt:write",
+      "network:ingress",
+      "network:egress",
+      "subprocess"
+    ],
+    "labels": [
+      "prompt-modification",
+      "remote-access"
+    ],
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    },
+    "standards": {
+      "schema": "dsh-levels/1",
+      "entry": {
+        "status": "pass",
+        "evidence": {
+          "level": "DSH-ENTRY runtime",
+          "command": "npx -p dsh-standards dsh-standards . --scope entry --entry-claim runtime --runtime <cordis>/lib/index.js --runtime-version 0.2.2-rc.1",
+          "staticCommand": "npx -p dsh-standards dsh-standards . --scope entry --entry-claim static --runtime-version 0.2.2-rc.1",
+          "result": "status=pass exit=0 blocking=0; DSC-04/06/07/09/14 PASS; WARN DSC-08 (C-8.2), WARN DSC-11 (C-11.5, documented in README)",
+          "notRun": [
+            "DSC-03 (install spec not supplied: package profile)"
+          ],
+          "environment": "node v24.21.0, dsh 0.2.2-rc.1, git-bug v0.11.0, linux x86_64, nix develop devShell",
+          "date": "2026-11-15"
+        }
+      },
+      "flow": {
+        "status": "not-run",
+        "evidence": null
+      },
+      "boost": {
+        "status": "not-measured",
+        "evidence": null
+      }
+    }
+  }
+}

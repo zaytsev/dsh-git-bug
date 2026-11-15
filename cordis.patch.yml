@@ -1,0 +1,4 @@
+# Loader patch for the dsh-git-bug row: one insert, nothing else.
+- insert:
+    - id: dsh-git-bug
+      name: dsh-git-bug

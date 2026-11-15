@@ -1,0 +1,8 @@
+# Build and verification residue
+node_modules/
+.nix-cache/
+.nix-tmp/
+.npm-cache/
+.scratch/
+*.log
+.dsh-home/
