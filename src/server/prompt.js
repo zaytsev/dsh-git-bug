@@ -1,22 +1,25 @@
 /**
- * System-prompt section: what git-bug is here, how to drive it, and what the
- * board currently holds.
+ * System-prompt section: what git-bug is here and how to drive it.
  *
- * Ordering is deliberate. The instructions are a stable prefix the model can
- * cache across turns; the live facts (counts, the open-issue table) come last,
- * so a board refresh changes only the tail of the section.
+ * The text is a pure function of the resolved configuration. It deliberately
+ * carries no repository state — no counts, no identity, no issue list, no
+ * availability probe result. Transformer caches match request prefixes
+ * byte-for-byte, so any state read here would rewrite the prompt in place and
+ * invalidate the cached prefix of every request after it, including the whole
+ * conversation history. Live state reaches the model the cache-safe way
+ * instead: through `git_bug_list` and the other tools, whose results append at
+ * the tail of the conversation.
  * @module dsh-git-bug/server/prompt
  */
-
-import { countLabel, formatIssueList } from '../format.js'
 
 /** Section name registered with the system-prompt registry. */
 export const SECTION_NAME = 'dsh-git-bug'
 
 /**
- * Render the instructions, which never vary within one installation.
- * @param config - resolved plugin configuration.
- * @returns the static instruction text.
+ * Render the instructions for one plugin instance.
+ *
+ * @param config - resolved plugin configuration; the only input.
+ * @returns the section text, identical for every assembly of this activation.
  */
 export function instructionText(config) {
   const tools = [
@@ -35,12 +38,13 @@ export function instructionText(config) {
     `This workspace uses git-bug — an issue tracker stored in git refs — as its issue database ` +
       `and as the shared, persistent task list for agent work.`,
     '',
-    `Tools (they act on \`${config.repoPath}\`): ${tools}.`,
+    `Tools (they act on \`${config.repoPath}\`, remote \`${config.remote}\`): ${tools}.`,
     '',
     'How to use it:',
     '',
-    `1. Begin multi-step work by reading the issue list below; call \`git_bug_list\` when you need ` +
-      `a different filter. Never create an issue that already exists — update it instead.`,
+    `1. Read the list with \`git_bug_list\` before planning multi-step work — this prompt does not ` +
+      `carry the issue list, so that call is how you see what already exists. Never create an ` +
+      `issue that already exists; update it instead.`,
     `2. Create one issue per unit of work with \`git_bug_create\` and the label ` +
       `\`${config.taskLabel}\` before you start it. Keep it current as you go: ` +
       `\`git_bug_comment\` for progress, decisions, and blockers, ` +
@@ -54,61 +58,4 @@ export function instructionText(config) {
       `\`push\` publishes; pull before trusting an id you did not just see, and push only when ` +
       `the user asks to share.`,
   ].join('\n')
-}
-
-/**
- * Render the section for one assembly.
- *
- * @param deps - board cache, configuration, executable availability, and any identity-bootstrap failure.
- * @returns the section text: instructions, then the live repository state.
- */
-export function renderPromptSection(deps) {
-  const { board, config, unavailable = null, identityError = null } = deps
-  const instructions = instructionText(config)
-  const snapshot = board.read()
-  const facts = []
-
-  if (unavailable !== null) {
-    facts.push(
-      `Status: git-bug is NOT available here — ${unavailable.reason ?? 'the executable was not found'}. ` +
-        'The git_bug_* tools will fail; tell the user instead of retrying them.',
-    )
-    return `${instructions}\n\n${facts.join('\n')}`
-  }
-
-  if (snapshot === null) {
-    const error = board.error()
-    facts.push(
-      error === null
-        ? 'Status: reading the issue database…'
-        : `Status: git-bug could not read this repository (${error.kind}): ${error.message}`,
-    )
-    if (error !== null && error.kind === 'not-a-repository') {
-      facts.push(`\`${config.repoPath}\` is not a git repository, so the git_bug_* tools are inactive here.`)
-    }
-    return `${instructions}\n\n${facts.join('\n')}`
-  }
-
-  const open = snapshot.issues.filter(issue => issue.status === 'open')
-  const identity = snapshot.identities[0] ?? null
-  facts.push(
-    `Repository: \`${snapshot.repoPath}\` · remote \`${snapshot.remote}\` · ` +
-      `identity ${identity === null ? 'none yet (the first write creates one)' : `${identity.name} (${identity.humanId})`} · ` +
-      `${String(open.length)} open · ${String(snapshot.counts.closed)} closed · ` +
-      `${String(countLabel(snapshot.issues, config.taskLabel))} labelled ${config.taskLabel}`,
-    '',
-  )
-  if (identityError !== null) {
-    facts.push(`Identity: could not be created automatically (${identityError}); call git_bug_identity with create true before writing.`, '')
-  }
-  const shown = open.slice(0, config.issueListLimit)
-  facts.push(
-    formatIssueList(shown, {
-      heading: 'Open issues (newest edit first):',
-      note: open.length > shown.length
-        ? `(showing ${String(shown.length)} of ${String(open.length)}; call git_bug_list for more)`
-        : undefined,
-    }),
-  )
-  return `${instructions}\n\n${facts.join('\n')}`
 }

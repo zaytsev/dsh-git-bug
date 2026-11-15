@@ -31,7 +31,7 @@ async function waitFor(predicate, timeoutMs = 8000) {
 /** Start the plugin on a fake context bound to one repository. */
 async function activate(repoPath, overrides = {}) {
   const fake = fakeContext(overrides.fake)
-  await apply(fake.ctx, { repoPath, cacheTtlMs: 50, ...overrides.config })
+  await apply(fake.ctx, { repoPath, ...overrides.config })
   return fake
 }
 
@@ -140,33 +140,40 @@ test('a non-repository path is reported instead of written to', async () => {
       return true
     },
   )
-  await waitFor(() => fake.sections.length === 1)
-  const section = fake.sections[0].text()
-  assert.match(section, /not a git repository/)
+  assert.equal(fake.sections.length, 1)
+  assert.doesNotMatch(fake.sections[0].text, /not a git repository/, 'the prompt carries no repository state')
 })
 
-test('the prompt section carries the board and the usage rules', async () => {
+test('the prompt section is a stable function of config, with no repository state', async () => {
   const repoPath = await makeRepo()
   const fake = await activate(repoPath)
-  const list = fake.tools.find(tool => tool.name === 'git_bug_list')
-  const create = fake.tools.find(tool => tool.name === 'git_bug_create')
-  await create.execute({ title: 'Visible in the prompt', labels: ['agent-task'] }, {})
-
-  await waitFor(() => fake.sections[0].text().includes('Visible in the prompt'))
   const section = fake.sections[0]
   assert.equal(section.name, 'dsh-git-bug')
   assert.equal(section.order, 120)
+  assert.equal(typeof section.text, 'string', 'a literal string cannot vary between assemblies')
 
-  const text = section.text()
+  const text = section.text
   assert.match(text, /## git-bug issue tracker/)
-  assert.match(text, new RegExp(repoPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.ok(text.includes(repoPath), 'the section names the repository it acts on')
+  assert.match(text, /git_bug_list/)
   assert.match(text, /git_bug_create/)
   assert.match(text, /todo_write/)
   assert.match(text, /agent-task/)
-  assert.match(text, /Open issues/)
-  assert.match(text, /1 open/)
-  assert.ok(text.indexOf('How to use it:') < text.indexOf('Open issues'), 'instructions stay a stable prefix')
-  void list
+  assert.match(text, /remote \`origin\`/)
+  // No live state may appear: a provider caches request prefixes byte-for-byte.
+  assert.doesNotMatch(text, /Open issues/)
+  assert.doesNotMatch(text, /\d+ open/)
+  assert.doesNotMatch(text, /· \d+ closed/)
+  assert.doesNotMatch(text, /\([0-9a-f]{7}\)/, 'no identity human id from the repository')
+  assert.doesNotMatch(text, /Status:/)
+
+  // Mutations change the repository but must not change the prompt by one byte.
+  const create = fake.tools.find(tool => tool.name === 'git_bug_create')
+  const status = fake.tools.find(tool => tool.name === 'git_bug_status')
+  const created = await create.execute({ title: 'State that must stay out', labels: ['agent-task'] }, {})
+  await status.execute({ id: created.humanId, status: 'closed' }, {})
+  assert.equal(section.text, text, 'a write must not rewrite the system prompt')
+  assert.doesNotMatch(section.text, /State that must stay out/)
 })
 
 test('a headless composition still registers tools when the web server is absent', async () => {
@@ -185,8 +192,11 @@ test('mounts one prefix route for the panel API', async () => {
   assert.equal(typeof fake.routes[0].handler, 'function')
 })
 
-test('reports a missing git-bug executable in the prompt instead of failing load', async () => {
+test('a missing git-bug executable does not fail load and does not touch the prompt', async () => {
   const repoPath = await makeRepo()
+  const fakeWithBinary = await activate(repoPath)
+  const baseline = fakeWithBinary.sections[0].text
+
   const fake = fakeContext()
   fake.ctx.subprocess = {
     async resolveExecutable() { throw new Error('not found on PATH') },
@@ -194,8 +204,8 @@ test('reports a missing git-bug executable in the prompt instead of failing load
   }
   await apply(fake.ctx, { repoPath })
   assert.equal(fake.tools.length, TOOL_NAMES.length)
-  await waitFor(() => fake.sections[0].text().includes('NOT available'))
-  assert.match(fake.sections[0].text(), /git-bug is NOT available here/)
+  assert.equal(fake.sections.length, 1)
+  assert.equal(fake.sections[0].text, baseline, 'an unavailable executable must not change the prompt')
 })
 
 test('config defaults and validation are explicit', () => {
@@ -206,8 +216,9 @@ test('config defaults and validation are explicit', () => {
   assert.equal(defaults.taskLabel, 'agent-task')
   assert.equal(defaults.autoCreateIdentity, true)
   assert.equal(defaults.promptSection, true)
-  assert.equal(defaults.issueListLimit, 25)
   assert.equal(defaults.timeoutMs, 30_000)
+  assert.equal('cacheTtlMs' in defaults, false, 'the plugin keeps no prompt-state cache')
+  assert.equal('issueListLimit' in defaults, false, 'the prompt holds no issue list')
 
   const configured = normalizeConfig({
     repoPath: '/tmp/x/',
@@ -217,10 +228,8 @@ test('config defaults and validation are explicit', () => {
     autoCreateIdentity: false,
     promptSection: false,
     promptOrder: 140,
-    issueListLimit: 5,
     timeoutMs: 1000,
     syncTimeoutMs: 2000,
-    cacheTtlMs: 100,
     identity: { name: 'Bot', email: 'bot@example.com' },
   })
   assert.equal(configured.repoPath, '/tmp/x')
@@ -233,7 +242,6 @@ test('config defaults and validation are explicit', () => {
 
   assert.throws(() => normalizeConfig({ apiPath: 'nope' }), /must start with/)
   assert.throws(() => normalizeConfig({ promptOrder: Number.NaN }), /finite number/)
-  assert.throws(() => normalizeConfig({ issueListLimit: 0 }), /positive integer/)
   assert.throws(() => normalizeConfig({ timeoutMs: -1 }), /positive finite number/)
   assert.throws(() => normalizeConfig('nope'), /must be an object/)
 })

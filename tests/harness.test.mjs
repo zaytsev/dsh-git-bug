@@ -75,7 +75,7 @@ const skip = cli === null
   ? 'no @deepseek-ai/dsh install resolved; set DSH_TEST_NODE_MODULES to a node_modules directory holding it'
   : false
 
-test('the assembled request carries the board, the tools, and a real tool result', { skip, timeout: 180_000 }, async () => {
+test('the assembled prompt is byte-stable across a turn that writes to git-bug', { skip, timeout: 180_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-git-bug-e2e-'))
   const home = join(root, 'home')
   const repo = join(root, 'repo')
@@ -117,12 +117,24 @@ test('the assembled request carries the board, the tools, and a real tool result
     const requests = readFileSync(requestLog, 'utf8').trim().split('\n').map(line => JSON.parse(line))
     assert.ok(requests.length >= 2, 'the agent must have made at least one tool round trip')
 
-    const first = requests[0]
+    // The agent-turn requests are the ones offering this plugin's tools.
+    const turn = requests.filter(request => (request.tools ?? []).some(tool => tool.function.name.startsWith('git_bug_')))
+    assert.ok(turn.length >= 2, 'the turn must span at least two model steps')
+    const first = turn[0]
     const system = first.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
     assert.match(system, /## git-bug issue tracker/, 'the system prompt carries the plugin section')
-    assert.match(system, /Seeded shared task/, 'the section carries the live issue list')
-    assert.match(system, /Open issues/)
-    assert.match(system, /Repository: `/, 'the section names the repository it acts on')
+    assert.ok(system.includes(repo), 'the section names the repository it acts on')
+
+    // The cache contract: the plugin contributes a byte-stable prefix, so no step
+    // of the turn may see a different system prompt. The turn writes to git-bug
+    // (see the plan above), which is exactly the case that used to break this.
+    const systems = turn.map(request => request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n'))
+    for (const [index, text] of systems.entries()) {
+      assert.equal(text, system, `step ${String(index + 1)} of the turn must reuse the identical system prompt`)
+    }
+    assert.doesNotMatch(system, /Seeded shared task/, 'no repository state may leak into the prefix')
+    assert.doesNotMatch(system, /Open issues/)
+    assert.doesNotMatch(system, /\d+ open/)
 
     const toolNames = first.tools.map(tool => tool.function.name)
     for (const name of ['git_bug_list', 'git_bug_show', 'git_bug_create', 'git_bug_comment', 'git_bug_status', 'git_bug_label', 'git_bug_sync', 'git_bug_identity']) {

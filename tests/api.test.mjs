@@ -5,7 +5,6 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { createBoard } from '../src/board.js'
 import { createApiHandler } from '../src/server/api.js'
 import { normalizeConfig } from '../src/server/index.js'
 import { adapter, makeRepo, TEST_ENV } from './support.mjs'
@@ -18,13 +17,12 @@ import { adapter, makeRepo, TEST_ENV } from './support.mjs'
 async function mount(repoPath) {
   const repo = adapter(repoPath)
   const config = normalizeConfig({ repoPath, apiPath: '/git-bug/v1', autoCreateIdentity: false })
-  const board = createBoard({ repo, ttlMs: 1000 })
-  const handler = createApiHandler({ repo, board, config, availability: async () => ({ available: true, version: 'v-test' }) })
+  const handler = createApiHandler({ repo, config, availability: async () => ({ available: true, version: 'v-test' }) })
   const server = createServer((req, res) => { void handler(req, res) })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   const base = `http://127.0.0.1:${address.port}/git-bug/v1`
-  return { base, board, repo, close: () => new Promise(resolve => server.close(resolve)) }
+  return { base, repo, close: () => new Promise(resolve => server.close(resolve)) }
 }
 
 test('serves the overview, creates an issue, comments, and closes it', async () => {

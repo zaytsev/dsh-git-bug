@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { countLabel, formatDigest, formatIssueDetail, formatIssueList, identityLabel, issueRow, stamp } from '../src/format.js'
+import { formatIssueDetail, formatIssueList, identityLabel, issueRow, stamp } from '../src/format.js'
 
 const summary = {
   id: 'a'.repeat(40),
@@ -65,12 +65,4 @@ test('renders detail with comments and without them', () => {
   assert.match(text, /--- #1 c1aaaaa by Agent \(u1\)/)
   assert.match(text, /second body/)
   assert.match(formatIssueDetail({ ...detail, comments: [], commentCount: 0 }), /\(no comments\)/)
-})
-
-test('digest and label counting follow the open set', () => {
-  const issues = [summary, { ...summary, status: 'closed' }, { ...summary, humanId: 'ccccccc' }]
-  assert.equal(countLabel(issues, 'agent-task'), 2)
-  assert.equal(countLabel(issues, 'missing'), 0)
-  assert.equal(formatDigest({ open: 2, closed: 1 }, 'agent-task', issues), '2 open · 1 closed · 2 labelled agent-task')
-  assert.equal(formatDigest({ open: 0, closed: 0 }, 'agent-task', []), '0 open · 0 closed')
 })

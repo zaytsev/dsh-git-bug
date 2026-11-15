@@ -96,11 +96,11 @@ function positiveInt(url, key, fallback) {
 /**
  * Build the request handler mounted at the API prefix.
  *
- * @param deps - repository adapter, board cache, availability facts, and configuration.
+ * @param deps - repository adapter, availability facts, and configuration.
  * @returns the HTTP handler for the prefix route.
  */
 export function createApiHandler(deps) {
-  const { repo, board, config, availability } = deps
+  const { repo, config, availability } = deps
 
   /**
    * Dispatch one request under the API prefix.
@@ -115,15 +115,15 @@ export function createApiHandler(deps) {
 
       if (path === '' || path === '/overview') {
         if (method !== 'GET') throw new ApiError(405, `${method} is not allowed here`)
-        const snapshot = await board.reload()
+        const overview = await repo.overview()
         const found = availability === undefined ? null : await availability()
         send(res, 200, {
-          repoPath: snapshot.repoPath,
-          remote: snapshot.remote,
-          identity: snapshot.identities[0] ?? null,
-          identities: snapshot.identities,
-          counts: snapshot.counts,
-          issues: snapshot.issues,
+          repoPath: overview.repoPath,
+          remote: overview.remote,
+          identity: overview.identities[0] ?? null,
+          identities: overview.identities,
+          counts: overview.counts,
+          issues: overview.issues,
           taskLabel: config.taskLabel,
           availability: found,
         })
@@ -150,8 +150,6 @@ export function createApiHandler(deps) {
             message: typeof body.message === 'string' ? body.message : '',
             labels,
           })
-          board.invalidate()
-          await board.reload()
           send(res, 201, created)
           return
         }
@@ -169,14 +167,12 @@ export function createApiHandler(deps) {
         if (action === '/comments' && method === 'POST') {
           const body = await readBody(req)
           await repo.comment(id, typeof body.message === 'string' ? body.message : '')
-          board.invalidate()
           send(res, 200, { id })
           return
         }
         if (action === '/status' && method === 'POST') {
           const body = await readBody(req)
           const status = await repo.setStatus(id, body.status)
-          board.invalidate()
           send(res, 200, { id, status })
           return
         }
@@ -184,7 +180,6 @@ export function createApiHandler(deps) {
           const body = await readBody(req)
           const label = typeof body.label === 'string' ? body.label : ''
           const result = await repo.label(id, label, body.action === 'remove' ? 'remove' : 'add')
-          board.invalidate()
           send(res, 200, { id, ...result })
           return
         }
@@ -195,8 +190,6 @@ export function createApiHandler(deps) {
         const body = await readBody(req)
         const remote = typeof body.remote === 'string' && body.remote.length > 0 ? body.remote : undefined
         const result = body.action === 'push' ? await repo.push(remote) : await repo.pull(remote)
-        board.invalidate()
-        await board.reload()
         send(res, 200, result)
         return
       }
@@ -208,8 +201,6 @@ export function createApiHandler(deps) {
             name: typeof body.name === 'string' && body.name.length > 0 ? body.name : config.identity.name,
             email: typeof body.email === 'string' && body.email.length > 0 ? body.email : config.identity.email,
           })
-          board.invalidate()
-          await board.reload()
           send(res, 200, result)
           return
         }

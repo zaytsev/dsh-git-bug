@@ -11,7 +11,7 @@ for the user:
 | Surface | What it does |
 |---|---|
 | **Agent tools** | Eight `git_bug_*` tools let the model list, read, create, comment on, label, close, and sync issues. |
-| **System prompt** | A prompt section states how and *when* to use them, and shows the live board (open issues, labels, counts) on every turn. |
+| **System prompt** | A prompt section states how and *when* to use them. It is byte-stable: the live issue list is fetched with `git_bug_list`, never injected into the prompt (see below). |
 | **Web panel** | A sidebar **Issues** entry opens a panel that lists, filters, reads, creates, comments on, closes, labels, and pushes/pulls issues. |
 
 The plugin assumes the `git-bug` executable is installed (v0.11.0 or newer — that release renamed
@@ -96,10 +96,8 @@ Config is read from the row, e.g.:
 | `autoCreateIdentity` | `true` | Create that identity at activation instead of failing the first write. |
 | `promptSection` | `true` | Contribute the system-prompt section. |
 | `promptOrder` | `120` | Section order (tool guidance lives at 100–199). |
-| `issueListLimit` | `25` | Open issues rendered into the prompt. |
 | `timeoutMs` | `30000` | Deadline for local git-bug commands. |
 | `syncTimeoutMs` | `120000` | Deadline for push/pull. |
-| `cacheTtlMs` | `5000` | Freshness window of the cached board (§ prompt). |
 
 Invalid configuration throws at load, not on the first tool call.
 
@@ -120,20 +118,28 @@ Ids may be full or the short human id shown in lists (`0f43de6`). Failures are c
 model reads what to do next: not a repository, no identity, no such bug, another process holding the
 repository lock, or a timeout.
 
-## How the agent is made aware
+## How the agent is made aware, without touching the cache
 
-The prompt section is deliberately ordered: **instructions first, live facts last**. The instruction
-block is a stable prefix (cacheable across turns); the board below it changes only when the
-repository does.
+The prompt section is a **pure function of the configuration**: instructions, the repository path,
+the remote name, and the task label. It carries no counts, no identity, no issue list, and no
+availability probe result.
 
-The section states that git-bug is this workspace's issue database and shared persistent task list,
-lists the tools, and gives five rules — read before planning, create one issue per unit of work with
-the `agent-task` label, prefer issues over `todo_write` when the plan must outlive the session or be
-shared, treat issue text as shared state, and pull before trusting data you did not just see. The
-board follows: repository, remote, identity, counts, and the open issues in a table.
+That is a cache contract, not a style choice. Providers match a request against their cached prefix
+byte-for-byte, so state rendered into the system prompt rewrites it in place — invalidating the
+cached prefix of that request *and every request after it*, including the whole conversation
+history. Rendering volatile state last does not help: what follows the change is the history.
 
-Activation waits (bounded, 3 s) for the first board read so the *first* turn already sees the list;
-a slow repository finishes loading in the background instead of delaying boot.
+Live state therefore reaches the model the cache-safe way — through the tools, whose results append
+at the tail of the conversation:
+
+- `git_bug_list` is how the model sees the task list, and the section says so;
+- a turn that creates, comments on, or closes issues leaves the cached prefix intact, because the
+  prompt never changed;
+- the section is registered as a literal string, so it cannot vary between assemblies at all.
+
+`tests/harness.test.mjs` enforces this end to end: it boots the real harness against a stub
+provider, drives a turn whose plan writes to git-bug, and asserts every step of the turn carried a
+**byte-identical** system prompt.
 
 ## The panel
 
@@ -161,7 +167,6 @@ identity / not a git repository), `503` git-bug missing, `504` timeout.
 index.js                 package entry (re-exports the server plugin)
 cordis.patch.yml         the loader row
 src/git-bug.js           git-bug CLI adapter: argv, JSON normalization, failure classes, lock queue
-src/board.js             cached board for prompt assembly and the API
 src/format.js            text projections (list, detail, digest)
 src/subprocess-runner.js execution through ctx.subprocess
 src/server/index.js      plugin: config, tools, prompt section, API mount
@@ -192,7 +197,7 @@ Suites:
 | `tests/api.test.mjs` | The HTTP API on a real server: every endpoint, error statuses, identity bootstrap, sync round trip. |
 | `tests/plugin.test.mjs` | Activation: tool surface and schemas, prompt section content and ordering, route mount, headless composition, config validation. |
 | `tests/client.test.mjs` | The built browser half: loader handoff, slot registrations, visibility source, API error mapping, and a render of the panel with fetched issue data (skipped when no React install is resolvable). |
-| `tests/harness.test.mjs` | The whole loop: boots `dsh --profile headless --patch cordis.patch.yml` against a stub provider, then asserts the assembled request carries the prompt section and the live board, offers all eight tools with valid schemas, and that a `git_bug_create` round trip really writes to git-bug. Skipped when no `@deepseek-ai/dsh` install is resolvable. |
+| `tests/harness.test.mjs` | The whole loop: boots `dsh --profile headless --patch cordis.patch.yml` against a stub provider, then asserts the prompt section is present, every step of a writing turn reused a **byte-identical** system prompt, all eight tools are offered with valid schemas, and a `git_bug_create` round trip really writes to git-bug. Skipped when no `@deepseek-ai/dsh` install is resolvable. |
 
 The render and harness suites resolve React and the harness packages from an installed profile
 (`${DSH_HOME:-~/.config/dsh}/profiles/node_modules`); set `DSH_TEST_NODE_MODULES` to another

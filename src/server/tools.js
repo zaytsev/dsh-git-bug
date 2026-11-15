@@ -3,7 +3,7 @@
  *
  * Every tool is one thin projection of the repository adapter: it validates the
  * few constraints the JSON Schema cannot express, calls one adapter method, and
- * renders a text block. Mutations invalidate the board so the next prompt
+ * renders a text block. Mutations need no cache to invalidate: the prompt
  * assembly and the GUI panel reflect the change.
  * @module dsh-git-bug/server/tools
  */
@@ -120,29 +120,21 @@ function textBlock(text) {
  * Register the git-bug tool family.
  *
  * @param ctx - plugin context carrying the tool registry.
- * @param deps - repository adapter, board cache, and resolved configuration.
+ * @param deps - repository adapter and resolved configuration.
  * @returns the disposers of the registrations, in registration order.
  */
 export function registerTools(ctx, deps) {
-  const { repo, board, config } = deps
+  const { repo, config } = deps
   const context = { repoPath: config.repoPath }
   const registered = []
-
-  /** Invalidate the board after a mutation and refresh it in the background. */
-  const mutated = () => {
-    board.invalidate()
-    board.reload().catch(() => {
-      // The mutation already succeeded; a stale-count refresh failure is not
-      // worth failing the tool call over.
-    })
-  }
 
   registered.push(ctx.tools.register(defineGitBugTool({
     name: 'git_bug_list',
     description:
       'List git-bug issues in the current repository, newest edit first. '
-      + 'This is the workspace\'s shared task list: call it before planning multi-step work, '
-      + 'and call it again after a sync to see what other sessions or people changed. '
+      + 'This is the workspace\'s shared task list and the only way to see it: the system prompt does '
+      + 'not carry the issue list, so call this before planning multi-step work, and again after a '
+      + 'sync to see what other sessions or people changed. '
       + 'Filters: status, labels, full-text terms, and a result cap.',
     parameters: {
       status: { type: 'string', enum: ['open', 'closed', 'all'], description: 'Only issues in this status. Default open+closed.' },
@@ -215,7 +207,6 @@ export function registerTools(ctx, deps) {
         message: typeof args.message === 'string' ? args.message : '',
         labels: Array.isArray(args.labels) ? args.labels.map(String) : [],
       })
-      mutated()
       return { ...created, title: typeof args.title === 'string' ? args.title : '' }
     },
     render(_args, value) {
@@ -245,7 +236,6 @@ export function registerTools(ctx, deps) {
         throw new GitBugFailure('git_bug_comment needs a non-empty message', { kind: GitBugFailureKind.COMMAND_FAILED })
       }
       await repo.comment(args.id.trim(), args.message)
-      mutated()
       return { id: args.id.trim() }
     },
     render(args) {
@@ -270,7 +260,6 @@ export function registerTools(ctx, deps) {
         throw new GitBugFailure('git_bug_status needs a bug id', { kind: GitBugFailureKind.NOT_FOUND })
       }
       const status = await repo.setStatus(args.id.trim(), args.status)
-      mutated()
       return { id: args.id.trim(), status }
     },
     render(_args, value) {
@@ -297,7 +286,6 @@ export function registerTools(ctx, deps) {
         throw new GitBugFailure('git_bug_label needs a bug id', { kind: GitBugFailureKind.NOT_FOUND })
       }
       const result = await repo.label(args.id.trim(), args.label, args.action === 'remove' ? 'remove' : 'add')
-      mutated()
       return { id: args.id.trim(), ...result }
     },
     render(_args, value) {
@@ -323,12 +311,10 @@ export function registerTools(ctx, deps) {
       const remote = typeof args.remote === 'string' && args.remote.trim().length > 0 ? args.remote.trim() : undefined
       if (args.action === 'push') {
         const result = await repo.push(remote)
-        mutated()
         return result
       }
       if (args.action === 'pull') {
         const result = await repo.pull(remote)
-        mutated()
         return result
       }
       throw new GitBugFailure('git_bug_sync needs action "push" or "pull"', { kind: GitBugFailureKind.COMMAND_FAILED })
@@ -359,7 +345,6 @@ export function registerTools(ctx, deps) {
           name: typeof args.name === 'string' && args.name.length > 0 ? args.name : config.identity.name,
           email: typeof args.email === 'string' && args.email.length > 0 ? args.email : config.identity.email,
         })
-        mutated()
         return result
       }
       const overview = await repo.overview()

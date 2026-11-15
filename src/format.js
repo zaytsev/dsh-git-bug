@@ -75,27 +75,3 @@ export function formatIssueDetail(issue) {
   }
   return lines.join('\n')
 }
-
-/**
- * Render the short repository digest used by the prompt section and the panel.
- * @param counts - open and closed issue counts.
- * @param taskLabel - the label that marks agent-owned tasks.
- * @param issues - normalized summaries, used for the labelled-task count.
- * @returns one line, e.g. "4 open · 2 closed · 3 labelled agent-task".
- */
-export function formatDigest(counts, taskLabel, issues = []) {
-  const parts = [`${String(counts.open)} open`, `${String(counts.closed)} closed`]
-  const labelled = countLabel(issues, taskLabel)
-  if (labelled > 0) parts.push(`${String(labelled)} labelled ${taskLabel}`)
-  return parts.join(' · ')
-}
-
-/**
- * Count the open issues carrying one label.
- * @param issues - normalized summaries.
- * @param label - the label to look for.
- * @returns the number of open issues carrying it.
- */
-export function countLabel(issues, label) {
-  return issues.filter(issue => issue.status === 'open' && issue.labels.includes(label)).length
-}
