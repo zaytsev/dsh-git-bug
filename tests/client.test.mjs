@@ -65,6 +65,8 @@ function loadBundle(reactModule) {
     URLSearchParams,
     setTimeout,
     clearTimeout,
+    setInterval,
+    clearInterval,
     console,
     fetch: async () => { throw new Error('fetch is not stubbed in this test') },
   }
@@ -82,9 +84,17 @@ function loadBundle(reactModule) {
 function fakeClientContext() {
   const registrations = []
   const effects = []
+  /** Dispose every tracked effect, newest first, so timers do not outlive the test. */
+  const disposeAll = () => {
+    while (effects.length > 0) {
+      const effect = effects.pop()
+      effect.dispose()
+    }
+  }
   return {
     registrations,
     effects,
+    disposeAll,
     ctx: {
       effect(fn, label) {
         const dispose = fn()
@@ -245,29 +255,55 @@ test('the built bundle registers one loader id and exports a slot plugin', () =>
 
 test('apply injects styles and registers the sidebar action and the overlay', () => {
   const { exports } = loadBundle(stubReact)
-  const { ctx, registrations, effects } = fakeClientContext()
+  const { ctx, registrations, effects, disposeAll } = fakeClientContext()
   exports.apply(ctx)
 
   assert.deepEqual(registrations.map(entry => entry.options.name).sort(), ['shell.overlay', 'sidebar.footer.action'])
   for (const entry of registrations) assert.equal(entry.options.id, 'git-bug')
-  assert.equal(effects.length, 1)
-  assert.equal(effects[0].label, 'dsh-git-bug: styles')
-  effects[0].dispose()
+  assert.deepEqual(effects.map(effect => effect.label), ['dsh-git-bug: styles', 'dsh-git-bug: open issue count'])
 
   const action = registrations.find(entry => entry.options.name === 'sidebar.footer.action')
   const face = action.options.inject()
   assert.equal(typeof face.show, 'function')
   assert.equal(typeof face.hide, 'function')
+  assert.equal(typeof face.loadOverview, 'function')
   assert.equal(typeof face.hooks.visibility.getSnapshot, 'function')
+  assert.equal(typeof face.hooks.openCount.getSnapshot, 'function')
+  assert.equal(face.hooks.openCount.getSnapshot(), null, 'the count is unknown until the first read lands')
 
   const hidden = exports.__internals
   assert.equal(hidden.t('issues'), 'Issues')
 
-  const button = action.component({ wide: true, show: face.show })
-  assert.equal(button.type, 'button')
-  assert.match(textOf(button), /Issues/)
-  const narrow = action.component({ wide: false, show: face.show })
+  disposeAll()
+  assert.equal(effects.length, 0, 'every effect, including the count poll, unloads')
+})
+
+test('the sidebar action right-aligns the open-issue count', () => {
+  const { exports } = loadBundle(stubReact)
+  const { ctx, registrations, disposeAll } = fakeClientContext()
+  exports.apply(ctx)
+  const action = registrations.find(entry => entry.options.name === 'sidebar.footer.action')
+  const face = action.options.inject()
+
+  const wide = action.component({ wide: true, show: face.show, useOpenCount: () => 3 })
+  assert.equal(wide.type, 'button')
+  assert.match(textOf(wide), /Issues/)
+  assert.match(textOf(wide), /3/)
+  const countSpan = find(wide, node => node.props?.className === 'gb-action-count')
+  assert.ok(countSpan !== null, 'the count renders in its own span so CSS can push it right')
+  assert.equal(textOf(countSpan), '3')
+  assert.match(wide.props.title, /Open issues: 3/)
+
+  // A real zero is a fact and renders; an unknown count (no repository, failed read) does not.
+  assert.match(textOf(action.component({ wide: true, show: face.show, useOpenCount: () => 0 })), /0/)
+  assert.equal(find(action.component({ wide: true, show: face.show, useOpenCount: () => null }), node => node.props?.className === 'gb-action-count'), null)
+
+  // The collapsed rail keeps one icon: no label, no count.
+  const narrow = action.component({ wide: false, show: face.show, useOpenCount: () => 3 })
   assert.doesNotMatch(textOf(narrow), /Issues/)
+  assert.equal(find(narrow, node => node.props?.className === 'gb-action-count'), null)
+
+  disposeAll()
 })
 
 test('the visibility source publishes only real transitions', () => {
@@ -353,8 +389,9 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   }
 
   const registrations = []
+  const effects = []
   const ctx = {
-    effect(fn) { fn(); return () => {} },
+    effect(fn) { const dispose = fn(); effects.push({ dispose }); return dispose },
     slots: {
       inject(_name, callback) { return callback() },
       register(options, component) { registrations.push({ options, component }); return () => {} },
@@ -364,7 +401,8 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
 
   const overlay = registrations.find(entry => entry.options.name === 'shell.overlay')
   const face = overlay.options.inject()
-  const tree = await driver.mount(overlay.component, { useVisibility: () => true, hide: face.hide })
+  const panelProps = { useVisibility: () => true, hide: face.hide, loadOverview: face.loadOverview }
+  const tree = await driver.mount(overlay.component, panelProps)
 
   const rendered = textOf(tree)
   assert.match(rendered, /Git-Bug issues/)
@@ -378,27 +416,35 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   assert.ok(row !== null, 'the issue row must be a button')
   row.props.onClick()
 
-  const settled = await driver.mount(overlay.component, { useVisibility: () => true, hide: face.hide })
+  const settled = await driver.mount(overlay.component, panelProps)
   assert.match(textOf(settled), /first body/)
   assert.ok(calls.some(call => call.url.endsWith('/issues/aaaaaaa')))
 
   const closeButton = buttonByText(settled, 'Mark done')
   assert.ok(closeButton !== null)
   closeButton.props.onClick()
-  await driver.mount(overlay.component, { useVisibility: () => true, hide: face.hide })
+  await driver.mount(overlay.component, panelProps)
   assert.ok(calls.some(call => call.url.endsWith('/status') && call.method === 'POST'))
+  // The overview the panel renders is the same read that publishes the sidebar count.
+  assert.equal(face.hooks.openCount.getSnapshot(), 1)
+  face.hide()
+  assert.equal(face.hooks.visibility.getSnapshot(), false)
+  for (const effect of effects) effect.dispose()
 })
 
 test('the overlay renders nothing while closed', { skip: realReact === null ? 'no react install found' : false }, async () => {
   const driver = createDriver()
   const { exports } = loadBundle({ ...realReact, ...driver.hooks })
   const registrations = []
+  const effects = []
   const ctx = {
-    effect(fn) { fn(); return () => {} },
+    effect(fn) { const dispose = fn(); effects.push({ dispose }); return dispose },
     slots: { inject(_name, callback) { return callback() }, register(options, component) { registrations.push({ options, component }); return () => {} } },
   }
   exports.apply(ctx)
   const overlay = registrations.find(entry => entry.options.name === 'shell.overlay')
-  const tree = await driver.mount(overlay.component, { useVisibility: () => false, hide: () => {} })
+  const face = overlay.options.inject()
+  const tree = await driver.mount(overlay.component, { useVisibility: () => false, hide: face.hide, loadOverview: face.loadOverview })
   assert.equal(tree, null)
+  for (const effect of effects) effect.dispose()
 })

@@ -11,6 +11,7 @@
 		const STRINGS = {
 			zh: {
 				issues: "议题",
+				openCountTitle: "进行中的议题数",
 				title: "Git-Bug 议题",
 				refresh: "刷新",
 				pull: "拉取",
@@ -46,6 +47,7 @@
 			},
 			en: {
 				issues: "Issues",
+				openCountTitle: "Open issues",
 				title: "Git-Bug issues",
 				refresh: "Refresh",
 				pull: "Pull",
@@ -132,15 +134,24 @@
 		/** Sidebar footer entry point: one button that opens the overlay. */
 		function FooterAction(props) {
 			const label = t("issues")
+			const wide = props.wide !== false
+			// The plugin owns the count source and refreshes it; the renderer binds that
+			// source to useOpenCount through the inject hooks compartment.
+			const readCount = props.useOpenCount
+			const count = typeof readCount === "function" ? readCount((value) => value) : null
+			const title = wide && count !== null
+				? t("title") + " · " + t("openCountTitle") + ": " + String(count)
+				: t("title")
 			return h("button", {
 				type: "button",
 				className: "gb-action",
-				title: t("title"),
-				"aria-label": t("title"),
+				title,
+				"aria-label": title,
 				onClick: () => props.show(),
 			},
 				h(IconIssues, null),
-				props.wide === false ? null : h("span", null, label)
+				wide ? h("span", { className: "gb-action-label" }, label) : null,
+				wide && count !== null ? h("span", { className: "gb-action-count" }, String(count)) : null
 			)
 		}
 
@@ -277,7 +288,7 @@
 				const params = new URLSearchParams()
 				if (nextStatus !== "all") params.set("status", nextStatus)
 				if (nextQuery.trim().length > 0) params.set("search", nextQuery.trim())
-				return Promise.all([api("/overview"), api("/issues?" + params.toString())])
+				return Promise.all([props.loadOverview(), api("/issues?" + params.toString())])
 					.then(([head, body]) => {
 						setOverview(head)
 						setList(body.issues)
@@ -415,26 +426,45 @@
 		/** Overlay entry point: renders nothing while the panel is closed. */
 		function Overlay(props) {
 			const visible = props.useVisibility((value) => value)
-			return visible ? h(Panel, { hide: props.hide }) : null
+			return visible ? h(Panel, { hide: props.hide, loadOverview: props.loadOverview }) : null
 		}
 
-		/** Minimal observable source the renderer binds to `useVisibility`. */
-		function createVisibility() {
-			let visible = false
+		/**
+		 * Minimal observable source (getSnapshot/subscribe) with a setter that
+		 * publishes only real transitions. The renderer binds these to hooks.
+		 */
+		function createObservable(initial) {
+			let value = initial
 			const listeners = new Set()
-			const publish = () => { for (const listener of listeners) listener() }
 			return {
-				getSnapshot: () => visible,
+				getSnapshot: () => value,
 				subscribe: (listener) => {
 					listeners.add(listener)
 					return () => { listeners.delete(listener) }
 				},
-				show: () => { if (!visible) { visible = true; publish() } },
-				hide: () => { if (visible) { visible = false; publish() } },
+				set: (next) => {
+					if (Object.is(next, value)) return
+					value = next
+					for (const listener of listeners) listener()
+				},
 			}
 		}
 
-		const CSS = ".gb-action{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:3px 6px;border:0;border-radius:6px;background:0 0;color:var(--dsw-alias-label-tertiary,#8b8b8b);cursor:pointer;font-size:12px;line-height:18px}\n.gb-action:hover,.gb-action:focus-visible{color:var(--dsw-alias-label-secondary,#b0b0b0);background:var(--dsw-alias-fill-l1,rgba(255,255,255,.06))}\n.gb-action svg{flex:none}\n.gb-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.45)}\n.gb-panel{display:flex;flex-direction:column;width:min(1080px,100%);height:min(760px,100%);overflow:hidden;border:1px solid var(--dsw-alias-border-l2,#333);border-radius:14px;background:var(--dsw-specific-menu,#1b1b1f);color:var(--dsw-alias-label-primary,#eee);box-shadow:0 24px 64px rgba(0,0,0,.45)}\n.gb-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,#333)}\n.gb-title{font-size:15px;font-weight:600}\n.gb-meta{font-size:12px;color:var(--dsw-alias-label-tertiary,#8b8b8b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-spacer{flex:1}\n.gb-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:8px;background:0 0;color:inherit;cursor:pointer;font-size:12px}\n.gb-btn:hover:not(:disabled){background:var(--dsw-alias-fill-l1,rgba(255,255,255,.07))}\n.gb-btn:disabled{opacity:.5;cursor:default}\n.gb-btn-primary{background:var(--dsw-alias-button-primary-fill,#4a6cf7);border-color:transparent;color:var(--dsw-alias-label-primary-foreground,#fff)}\n.gb-btn-primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,#3a5be0)}\n.gb-body{display:flex;flex:1;min-height:0}\n.gb-list{display:flex;flex-direction:column;width:46%;min-width:320px;border-right:1px solid var(--dsw-alias-border-l2,#333)}\n.gb-tools{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-filters{display:flex;gap:6px;flex-wrap:wrap}\n.gb-chip{padding:3px 10px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:999px;background:0 0;color:inherit;cursor:pointer;font-size:12px}\n.gb-chip-on{background:var(--dsw-alias-fill-l2,rgba(255,255,255,.12));border-color:var(--dsw-alias-border-l3,#555)}\n.gb-input{width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:8px;background:var(--dsw-specific-input,rgba(0,0,0,.25));color:inherit;font:inherit;font-size:12px}\n.gb-input:focus{outline:1px solid var(--dsw-alias-brand-primary,#4a6cf7)}\n.gb-rows{flex:1;overflow:auto}\n.gb-row{display:flex;gap:8px;align-items:flex-start;width:100%;padding:9px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-l2,#28282d);background:0 0;color:inherit;cursor:pointer;text-align:left;font:inherit}\n.gb-row:hover{background:var(--dsw-alias-fill-l1,rgba(255,255,255,.05))}\n.gb-row-on{background:var(--dsw-alias-fill-l2,rgba(255,255,255,.1))}\n.gb-dot{flex:none;width:8px;height:8px;margin-top:5px;border-radius:50%;background:#46c07a}\n.gb-dot-closed{background:#8b8b8b}\n.gb-row-main{flex:1;min-width:0}\n.gb-row-title{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-row-sub{display:flex;gap:8px;margin-top:3px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b)}\n.gb-label{padding:0 6px;border-radius:999px;background:var(--dsw-alias-fill-l2,rgba(255,255,255,.1));font-size:10px}\n.gb-detail{display:flex;flex-direction:column;flex:1;min-width:0;overflow:auto}\n.gb-detail-head{padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-detail-title{font-size:14px;font-weight:600}\n.gb-kv{margin-top:6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b);display:flex;gap:10px;flex-wrap:wrap}\n.gb-comments{display:flex;flex-direction:column;gap:10px;padding:14px 16px}\n.gb-comment{padding:9px 11px;border:1px solid var(--dsw-alias-border-l2,#2b2b30);border-radius:10px;background:rgba(255,255,255,.02)}\n.gb-comment-head{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b);margin-bottom:4px}\n.gb-comment-body{font-size:12px;white-space:pre-wrap;word-break:break-word}\n.gb-compose{display:flex;flex-direction:column;gap:8px;padding:0 16px 16px}\n.gb-textarea{min-height:84px;resize:vertical;font-family:inherit}\n.gb-empty{display:flex;flex:1;align-items:center;justify-content:center;padding:24px;color:var(--dsw-alias-label-tertiary,#8b8b8b);font-size:12px;text-align:center}\n.gb-error{margin:10px 16px;padding:8px 10px;border:1px solid #b4453f;border-radius:8px;background:rgba(180,69,63,.12);font-size:12px;white-space:pre-wrap}\n.gb-form{display:flex;flex-direction:column;gap:8px;padding:12px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-hint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b)}"
+		/** Panel visibility, as data plus callbacks. */
+		function createVisibility() {
+			const source = createObservable(false)
+			return {
+				getSnapshot: source.getSnapshot,
+				subscribe: source.subscribe,
+				show: () => source.set(true),
+				hide: () => source.set(false),
+			}
+		}
+
+		/** How often the sidebar count re-reads the repository while the page is open. */
+		const COUNT_POLL_MS = 30000
+
+		const CSS = ".gb-action{display:inline-flex;flex:1 1 auto;align-items:center;gap:6px;min-width:0;min-height:28px;padding:3px 6px;border:0;border-radius:6px;background:0 0;color:var(--dsw-alias-label-tertiary,#8b8b8b);cursor:pointer;font-size:12px;line-height:18px}\n.gb-action:hover,.gb-action:focus-visible{color:var(--dsw-alias-label-secondary,#b0b0b0);background:var(--dsw-alias-fill-l1,rgba(255,255,255,.06))}\n.gb-action svg{flex:none}\n.gb-action-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-action-count{margin-left:auto;padding-left:8px;flex:none;color:var(--dsw-alias-label-tertiary,#8b8b8b);font-size:11px;font-variant-numeric:tabular-nums}\n.gb-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.45)}\n.gb-panel{display:flex;flex-direction:column;width:min(1080px,100%);height:min(760px,100%);overflow:hidden;border:1px solid var(--dsw-alias-border-l2,#333);border-radius:14px;background:var(--dsw-specific-menu,#1b1b1f);color:var(--dsw-alias-label-primary,#eee);box-shadow:0 24px 64px rgba(0,0,0,.45)}\n.gb-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,#333)}\n.gb-title{font-size:15px;font-weight:600}\n.gb-meta{font-size:12px;color:var(--dsw-alias-label-tertiary,#8b8b8b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-spacer{flex:1}\n.gb-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:8px;background:0 0;color:inherit;cursor:pointer;font-size:12px}\n.gb-btn:hover:not(:disabled){background:var(--dsw-alias-fill-l1,rgba(255,255,255,.07))}\n.gb-btn:disabled{opacity:.5;cursor:default}\n.gb-btn-primary{background:var(--dsw-alias-button-primary-fill,#4a6cf7);border-color:transparent;color:var(--dsw-alias-label-primary-foreground,#fff)}\n.gb-btn-primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,#3a5be0)}\n.gb-body{display:flex;flex:1;min-height:0}\n.gb-list{display:flex;flex-direction:column;width:46%;min-width:320px;border-right:1px solid var(--dsw-alias-border-l2,#333)}\n.gb-tools{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-filters{display:flex;gap:6px;flex-wrap:wrap}\n.gb-chip{padding:3px 10px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:999px;background:0 0;color:inherit;cursor:pointer;font-size:12px}\n.gb-chip-on{background:var(--dsw-alias-fill-l2,rgba(255,255,255,.12));border-color:var(--dsw-alias-border-l3,#555)}\n.gb-input{width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:8px;background:var(--dsw-specific-input,rgba(0,0,0,.25));color:inherit;font:inherit;font-size:12px}\n.gb-input:focus{outline:1px solid var(--dsw-alias-brand-primary,#4a6cf7)}\n.gb-rows{flex:1;overflow:auto}\n.gb-row{display:flex;gap:8px;align-items:flex-start;width:100%;padding:9px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-l2,#28282d);background:0 0;color:inherit;cursor:pointer;text-align:left;font:inherit}\n.gb-row:hover{background:var(--dsw-alias-fill-l1,rgba(255,255,255,.05))}\n.gb-row-on{background:var(--dsw-alias-fill-l2,rgba(255,255,255,.1))}\n.gb-dot{flex:none;width:8px;height:8px;margin-top:5px;border-radius:50%;background:#46c07a}\n.gb-dot-closed{background:#8b8b8b}\n.gb-row-main{flex:1;min-width:0}\n.gb-row-title{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-row-sub{display:flex;gap:8px;margin-top:3px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b)}\n.gb-label{padding:0 6px;border-radius:999px;background:var(--dsw-alias-fill-l2,rgba(255,255,255,.1));font-size:10px}\n.gb-detail{display:flex;flex-direction:column;flex:1;min-width:0;overflow:auto}\n.gb-detail-head{padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-detail-title{font-size:14px;font-weight:600}\n.gb-kv{margin-top:6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b);display:flex;gap:10px;flex-wrap:wrap}\n.gb-comments{display:flex;flex-direction:column;gap:10px;padding:14px 16px}\n.gb-comment{padding:9px 11px;border:1px solid var(--dsw-alias-border-l2,#2b2b30);border-radius:10px;background:rgba(255,255,255,.02)}\n.gb-comment-head{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b);margin-bottom:4px}\n.gb-comment-body{font-size:12px;white-space:pre-wrap;word-break:break-word}\n.gb-compose{display:flex;flex-direction:column;gap:8px;padding:0 16px 16px}\n.gb-textarea{min-height:84px;resize:vertical;font-family:inherit}\n.gb-empty{display:flex;flex:1;align-items:center;justify-content:center;padding:24px;color:var(--dsw-alias-label-tertiary,#8b8b8b);font-size:12px;text-align:center}\n.gb-error{margin:10px 16px;padding:8px 10px;border:1px solid #b4453f;border-radius:8px;background:rgba(180,69,63,.12);font-size:12px;white-space:pre-wrap}\n.gb-form{display:flex;flex-direction:column;gap:8px;padding:12px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-hint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b)}"
 
 		function apply(ctx) {
 			const style = document.createElement("style")
@@ -444,7 +474,38 @@
 			ctx.effect(() => () => { style.remove() }, "dsh-git-bug: styles")
 
 			const visibility = createVisibility()
-			const injected = () => ({ hooks: { visibility }, show: visibility.show, hide: visibility.hide })
+			// The open-issue count is a registrant-private reactive fact: the panel and the
+			// sidebar badge read it through hooks, and this closure is the only writer.
+			const openCount = createObservable(null)
+
+			/** Read the overview and publish its open-issue count; the panel reuses it. */
+			const loadOverview = () => api("/overview").then((overview) => {
+				const open = overview == null ? undefined : overview.counts == null ? undefined : overview.counts.open
+				openCount.set(typeof open === "number" ? open : null)
+				return overview
+			}).catch((error) => {
+				openCount.set(null)
+				throw error
+			})
+
+			ctx.effect(() => {
+				loadOverview().catch(() => {})
+				const timer = setInterval(() => { loadOverview().catch(() => {}) }, COUNT_POLL_MS)
+				// Opening and closing the panel bracket every write, so one refresh on each
+				// transition keeps the badge current without per-mutation wiring.
+				const stopWatching = visibility.subscribe(() => { loadOverview().catch(() => {}) })
+				return () => {
+					clearInterval(timer)
+					stopWatching()
+				}
+			}, "dsh-git-bug: open issue count")
+
+			const injected = () => ({
+				hooks: { visibility, openCount },
+				show: visibility.show,
+				hide: visibility.hide,
+				loadOverview,
+			})
 
 			ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
 				name: "sidebar.footer.action",
