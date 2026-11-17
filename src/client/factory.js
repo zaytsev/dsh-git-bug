@@ -16,6 +16,7 @@
 				refresh: "刷新",
 				pull: "拉取",
 				push: "推送",
+				sync: "同步",
 				close: "关闭",
 				open: "进行中",
 				closed: "已关闭",
@@ -54,6 +55,7 @@
 				refresh: "Refresh",
 				pull: "Pull",
 				push: "Push",
+				sync: "Sync",
 				close: "Close",
 				open: "Open",
 				closed: "Closed",
@@ -382,9 +384,17 @@
 					.finally(() => setBusy(false))
 			}
 
-			const sync = (action) => {
-				return start().then(() => api("/sync", { method: "POST", body: JSON.stringify({ action }) }))
-					.then((result) => { setNote(t("syncDone") + ": " + result.direction); return load(status, query, labelFilters) })
+			// One control for the normal flow: merge what the remote has, then publish what
+			// this repository has. The HTTP API keeps its explicit direction for power use.
+			const sync = () => {
+				return start().then(() => api("/sync", { method: "POST", body: JSON.stringify({ action: "pull" }) }))
+					.then((pulled) => api("/sync", { method: "POST", body: JSON.stringify({ action: "push" }) })
+						.then((pushed) => [pulled, pushed]))
+					.then((results) => {
+						const done = results.map((result) => result.direction + " " + result.remote).join(" · ")
+						setNote(t("syncDone") + ": " + done)
+						return load(status, query, labelFilters)
+					})
 					.catch(report)
 					.finally(() => setBusy(false))
 			}
@@ -417,8 +427,7 @@
 						),
 						h("div", { className: "gb-spacer" }),
 						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => load(status, query, labelFilters) }, t("refresh")),
-						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => sync("pull") }, t("pull")),
-						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => sync("push") }, t("push")),
+						h("button", { type: "button", className: "gb-btn", disabled: busy, title: t("pull") + " → " + t("push"), onClick: sync }, t("sync")),
 						h("button", { type: "button", className: "gb-btn", onClick: props.hide }, t("close"))
 					),
 					unavailable ? h("div", { className: "gb-error" }, t("unavailable") + ": " + String(overview.availability.reason ?? "")) : null,

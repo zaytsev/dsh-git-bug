@@ -386,7 +386,7 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   const reactModule = { ...realReact, ...driver.hooks }
   const { exports, sandbox } = loadBundle(reactModule)
   sandbox.fetch = async (url, options) => {
-    calls.push({ url, method: options?.method ?? 'GET' })
+    calls.push({ url, method: options?.method ?? 'GET', body: options?.body })
     const respond = (value) => ({ ok: true, status: 200, json: async () => value })
     if (url.endsWith('/overview')) return respond(overview)
     if (url.includes('/issues?')) return respond({ issues: [summary], taskLabel: 'agent-task' })
@@ -483,6 +483,20 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   const terms = calls.filter(call => call.url.includes('/issues?')).at(-1)
   assert.match(terms.url, /search=render/)
   assert.match(terms.url, /search=panel/)
+
+  // One sync control replaces the separate pull and push buttons, and it does
+  // both directions itself, in order. The API keeps its explicit action.
+  const syncButton = buttonByText(filtered, 'Sync')
+  assert.ok(syncButton !== null, 'the header carries one sync control')
+  assert.equal(buttonByText(filtered, 'Pull'), null, 'no separate pull control')
+  assert.equal(buttonByText(filtered, 'Push'), null, 'no separate push control')
+  syncButton.props.onClick()
+  await driver.mount(overlay.component, panelProps)
+  assert.deepEqual(
+    calls.filter(call => call.url.endsWith('/sync')).map(call => JSON.parse(call.body).action),
+    ['pull', 'push'],
+    'sync merges first, then publishes',
+  )
 
   // The overview the panel renders is the same read that publishes the sidebar count.
   assert.equal(face.hooks.openCount.getSnapshot(), 1)

@@ -137,7 +137,7 @@ Config is read from the row, e.g.:
 | Field | Default | Meaning |
 |---|---|---|
 | `repoPath` | `process.cwd()` | Repository the plugin reads and writes. `~/` expands. One repository per plugin instance. |
-| `remote` | `origin` | Git remote used by `git_bug_sync` and the panel's pull/push buttons. |
+| `remote` | `origin` | Git remote used by `git_bug_sync` and the panel's sync control. |
 | `apiPath` | `/git-bug/v1` | Mount point of the panel's JSON API on the harness web server. |
 | `taskLabel` | `ai` | Label the prompt tells the agent to put on work it owns. |
 | `labelVocabulary` | the table below | Replace any group of suggested labels (`kinds`, `priorities`, `severities`, `states`, `ownership`, `componentPrefix`). |
@@ -258,7 +258,7 @@ plumbing, no session needed — and shows repository truth: the same list the ag
 | `/git-bug/v1/issues/:id/comments` | POST | Add a comment. |
 | `/git-bug/v1/issues/:id/status` | POST | Open or close. |
 | `/git-bug/v1/issues/:id/labels` | POST | Add or remove one label. |
-| `/git-bug/v1/sync` | POST | Push or pull. |
+| `/git-bug/v1/sync` | POST | Push or pull, with an explicit `action`. The panel's one Sync button calls it twice: pull, then push. |
 | `/git-bug/v1/identity` | GET / POST | Read or create the identity. |
 
 Failures keep their classification: `400` a filter that is not valid git-bug syntax, `404` no such
