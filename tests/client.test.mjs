@@ -479,29 +479,68 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
     if (node.type === 'option' && node.props?.value !== undefined) options.push(node.props.value)
     collectOptions(node.children ?? node.props?.children ?? null)
   }
-  // Only the datalist's options: the label filter picker reuses the same list.
+  // Only the datalist's options.
   collectOptions(find(withForm, node => node.props?.id === 'gb-label-options'))
   // Merge rule: configured suggestions first, then the repository's own labels,
   // de-duplicated — the panel never hardcodes a label list of its own.
   const expectedOptions = [...new Set([...overview.labelVocabulary.suggestions, ...overview.labelsInUse])]
   assert.deepEqual([...new Set(options)], expectedOptions)
 
-  // Filters are structured controls: a label reaches the API as a label parameter
-  // and renders as a removable chip, so no typed text can become query syntax.
-  const picker = find(withForm, node => node.type === 'select')
-  assert.ok(picker !== null, 'the label picker is a select over the shared vocabulary')
-  picker.props.onChange({ target: { value: 'legacy-thing' } })
+  // Only two controls are visible until Advanced is opened: the status chips and
+  // the search box. Everything else waits behind the toggle.
+  const beforeAdvanced = await driver.mount(overlay.component, panelProps)
+  assert.equal(find(beforeAdvanced, node => node.props?.className === 'gb-cloud'), null, 'the label cloud is hidden')
+  const advancedButton = buttonByText(beforeAdvanced, 'Advanced')
+  assert.ok(advancedButton !== null, 'the advanced toggle is present')
+  advancedButton.props.onClick()
+  const opened = await driver.mount(overlay.component, panelProps)
+  const cloud = find(opened, node => node.props?.className === 'gb-cloud')
+  assert.ok(cloud !== null, 'Advanced reveals the label cloud')
+  assert.ok(textOf(cloud).includes('legacy-thing'), 'the cloud carries the labels in use')
+  assert.ok(textOf(cloud).includes('priority/high'), 'and the configured vocabulary')
+
+  // A label is a toggle in the cloud, not a select: select in place, deselect in
+  // place, and each state is a request parameter.
+  const cloudChip = buttonByText(cloud, 'legacy-thing')
+  assert.ok(cloudChip !== null, 'the label is a chip')
+  cloudChip.props.onClick()
   const filtered = await driver.mount(overlay.component, panelProps)
   assert.ok(
     calls.some(call => call.url.includes('/issues?') && call.url.includes('label=legacy-thing')),
     'the chosen label is a request parameter',
   )
-  const filterChip = buttonByText(filtered, 'legacy-thing ×')
-  assert.ok(filterChip !== null, 'an active label filter renders as a chip')
-  filterChip.props.onClick()
+  assert.match(textOf(buttonByText(filtered, 'Advanced')), /Advanced · 1/, 'the toggle counts what it hides')
+  buttonByText(find(filtered, node => node.props?.className === 'gb-cloud'), 'legacy-thing').props.onClick()
   await driver.mount(overlay.component, panelProps)
   const after = calls.filter(call => call.url.includes('/issues?')).at(-1)
-  assert.doesNotMatch(after.url, /label=/, 'removing the chip drops the filter')
+  assert.doesNotMatch(after.url, /label=/, 'deselecting the chip drops the filter')
+
+  // Sort is a server-side ordering, chosen next to the pager.
+  const sorted = await driver.mount(overlay.component, panelProps)
+  buttonByText(sorted, 'Created').props.onClick()
+  await driver.mount(overlay.component, panelProps)
+  const ordered = calls.filter(call => call.url.includes('/issues?')).at(-1)
+  assert.match(ordered.url, /sort=creation/)
+  assert.match(ordered.url, /direction=desc/, 'the default direction survives a sort change')
+  buttonByText(sorted, 'Oldest first').props.onClick()
+  await driver.mount(overlay.component, panelProps)
+  assert.match(calls.filter(call => call.url.includes('/issues?')).at(-1).url, /direction=asc/)
+
+  // One page of a known result set: both pager buttons are inert at the edges.
+  const paged = await driver.mount(overlay.component, panelProps)
+  const pagerButtons = []
+  const collectPager = (node) => {
+    if (node === null || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(collectPager); return }
+    if (node.props?.className === 'gb-pager') { pagerButtons.push(node); return }
+    collectPager(node.children ?? node.props?.children ?? null)
+  }
+  collectPager(paged)
+  assert.equal(pagerButtons.length, 1, 'the pager renders once')
+  assert.match(textOf(pagerButtons[0]), /1 \/ 1/, 'one page of one match')
+  for (const button of [buttonByText(pagerButtons[0], '‹'), buttonByText(pagerButtons[0], '›')]) {
+    assert.equal(button.props.disabled, true, 'no page to move to')
+  }
 
   // Every word is one title term: the search box cannot express a query.
   const search = find(filtered, node => node.type === 'input' && node.props?.placeholder === 'Search titles')
@@ -525,6 +564,44 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
     ['pull', 'push'],
     'sync merges first, then publishes',
   )
+
+  // Paging over a known result set: 45 matches, 20 per page, three pages, and the
+  // pager walks them without refetching (the server orders, the panel windows).
+  const many = Array.from({ length: 45 }, (unused, index) => ({
+    ...summary,
+    id: String(index).padStart(4, '0').padEnd(40, '0'),
+    humanId: 'page' + String(index),
+    title: 'Issue ' + String(index),
+  }))
+  sandbox.fetch = async (url) => ({
+    ok: true,
+    status: 200,
+    json: async () => (url.endsWith('/overview') ? overview : { issues: many, taskLabel: 'ai' }),
+  })
+  const countRows = (node) => {
+    if (node === null || typeof node !== 'object') return 0
+    if (Array.isArray(node)) return node.reduce((total, child) => total + countRows(child), 0)
+    const self = typeof node.props?.className === 'string' && node.props.className.includes('gb-row') && node.type === 'button' ? 1 : 0
+    return self + countRows(node.children ?? node.props?.children ?? null)
+  }
+  const pagerOf = (tree) => find(tree, node => node.props?.className === 'gb-pager')
+
+  buttonByText(paged, 'Refresh').props.onClick()
+  const firstPage = await driver.mount(overlay.component, panelProps)
+  assert.equal(countRows(firstPage), 20, 'a page holds PAGE_SIZE rows')
+  assert.match(textOf(pagerOf(firstPage)), /1 \/ 3/)
+
+  buttonByText(pagerOf(firstPage), '›').props.onClick()
+  const secondPage = await driver.mount(overlay.component, panelProps)
+  assert.equal(countRows(secondPage), 20, 'the next page is another PAGE_SIZE rows')
+  assert.match(textOf(pagerOf(secondPage)), /2 \/ 3/)
+  assert.match(textOf(secondPage), /Issue 20/, 'the window moved with the page')
+
+  buttonByText(pagerOf(secondPage), '›').props.onClick()
+  const thirdPage = await driver.mount(overlay.component, panelProps)
+  assert.equal(countRows(thirdPage), 5, 'the last page holds the remainder')
+  assert.match(textOf(pagerOf(thirdPage)), /3 \/ 3/)
+  assert.equal(buttonByText(pagerOf(thirdPage), '›').props.disabled, true, 'and there is nowhere further to go')
 
   // The overview the panel renders is the same read that publishes the sidebar count.
   assert.equal(face.hooks.openCount.getSnapshot(), 1)

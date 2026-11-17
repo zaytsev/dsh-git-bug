@@ -10,6 +10,7 @@
  */
 
 import { GitBugFailure, GitBugFailureKind } from '../git-bug.js'
+import { SORT_KEYS } from '../query.js'
 
 /** Refuse request bodies larger than this; issue bodies are small. */
 const MAX_BODY_BYTES = 1_000_000
@@ -135,12 +136,16 @@ export function createApiHandler(deps) {
       if (path === '/issues') {
         if (method === 'GET') {
           const status = url.searchParams.get('status')
+          const sort = url.searchParams.get('sort')
+          const direction = url.searchParams.get('direction')
           const issues = await repo.list({
             status: status === 'open' || status === 'closed' ? status : undefined,
             labels: repeated(url, 'label'),
             titles: repeated(url, 'search'),
             query: url.searchParams.get('query') ?? '',
             limit: positiveInt(url, 'limit', 200),
+            sort: SORT_KEYS.includes(sort) ? sort : undefined,
+            direction: direction === 'asc' || direction === 'desc' ? direction : undefined,
           })
           send(res, 200, { issues, taskLabel: config.taskLabel, labelVocabulary: vocabulary ?? null })
           return

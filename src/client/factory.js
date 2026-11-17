@@ -18,6 +18,10 @@
 
 		const API_BASE = "/git-bug/v1"
 		const STYLE_ID = "dsh-git-bug"
+		/** Rows per page: enough to scan, few enough that the list stays fast. */
+		const PAGE_SIZE = 20
+		/** Matches fetched in one request; paging happens over this set, client side. */
+		const PAGE_LIMIT = 200
 
 		const STRINGS = {
 			zh: {
@@ -33,8 +37,18 @@
 				closed: "已关闭",
 				all: "全部",
 				search: "搜索标题",
-				filterLabel: "按标签筛选",
-				remove: "移除",
+				advanced: "高级",
+				sort: "排序",
+				edited: "编辑时间",
+				created: "创建时间",
+				id: "编号",
+				newest: "最新优先",
+				oldest: "最旧优先",
+				pageOf: "{n} / {total}",
+				previousPage: "上一页",
+				nextPage: "下一页",
+				matches: "{n} 条匹配",
+				noLabels: "还没有标签",
 				noIssues: "没有匹配的议题",
 				pickIssue: "选择左侧议题查看详情",
 				newIssue: "新建议题",
@@ -72,8 +86,18 @@
 				closed: "Closed",
 				all: "All",
 				search: "Search titles",
-				filterLabel: "Filter by label",
-				remove: "Remove",
+				advanced: "Advanced",
+				sort: "Sort",
+				edited: "Edited",
+				created: "Created",
+				id: "Id",
+				newest: "Newest first",
+				oldest: "Oldest first",
+				pageOf: "{n} / {total}",
+				previousPage: "Previous page",
+				nextPage: "Next page",
+				matches: "{n} matching",
+				noLabels: "No labels yet",
 				noIssues: "No issues match",
 				pickIssue: "Select an issue to read it",
 				newIssue: "New issue",
@@ -321,6 +345,10 @@
 			const [status, setStatus] = react.useState("open")
 			const [query, setQuery] = react.useState("")
 			const [labelFilters, setLabelFilters] = react.useState([])
+			const [sort, setSort] = react.useState("edit")
+			const [direction, setDirection] = react.useState("desc")
+			const [page, setPage] = react.useState(1)
+			const [advanced, setAdvanced] = react.useState(false)
 			const [creating, setCreating] = react.useState(false)
 			const [busy, setBusy] = react.useState(false)
 			const [error, setError] = react.useState(null)
@@ -328,14 +356,18 @@
 
 			const report = (failure) => setError(failure instanceof Error ? failure.message : String(failure))
 
-			const load = react.useCallback((nextStatus, nextQuery, nextLabels) => {
+			const load = react.useCallback((next) => {
 				setError(null)
 				const params = new URLSearchParams()
-				if (nextStatus !== "all") params.set("status", nextStatus)
+				if (next.status !== "all") params.set("status", next.status)
 				// Search text is literal: every word becomes one title term, so this box can
 				// never turn into git-bug's query language. Only the tools accept a query.
-				for (const term of nextQuery.trim().split(/\s+/).filter((value) => value.length > 0)) params.append("search", term)
-				for (const label of nextLabels) params.append("label", label)
+				for (const term of next.query.trim().split(/\s+/).filter((value) => value.length > 0)) params.append("search", term)
+				for (const label of next.labels) params.append("label", label)
+				// Ordering and the page window belong to the server: the CLI sorts, we page.
+				params.set("sort", next.sort)
+				params.set("direction", next.direction)
+				params.set("limit", String(PAGE_LIMIT))
 				return Promise.all([props.loadOverview(), api("/issues?" + params.toString())])
 					.then(([head, body]) => {
 						setOverview(head)
@@ -344,7 +376,14 @@
 					.catch(report)
 			}, [])
 
-			react.useEffect(() => { void load(status, query, labelFilters) }, [load, status, query, labelFilters])
+			/** Reload the list with the filters as they stand now. */
+			const reload = () => load({ status, query, labels: labelFilters, sort, direction })
+
+			react.useEffect(() => {
+				// A new filter set is a new list, so it starts at the first page.
+				setPage(1)
+				void load({ status, query, labels: labelFilters, sort, direction })
+			}, [load, status, query, labelFilters, sort, direction])
 
 			react.useEffect(() => {
 				if (selected === null) return
@@ -373,7 +412,7 @@
 					.then((created) => {
 						setCreating(false)
 						setNote(created.humanId + " " + created.title)
-						return load(status, query, labelFilters)
+						return reload()
 					})
 					.catch(report)
 					.finally(() => setBusy(false))
@@ -391,7 +430,7 @@
 			const toggleStatus = (next) => {
 				if (selected === null) return Promise.resolve()
 				return start().then(() => api("/issues/" + encodeURIComponent(selected) + "/status", { method: "POST", body: JSON.stringify({ status: next }) }))
-					.then(() => Promise.all([api("/issues/" + encodeURIComponent(selected)), load(status, query, labelFilters)]))
+					.then(() => Promise.all([api("/issues/" + encodeURIComponent(selected)), reload()]))
 					.then(([value]) => { setDetail(value); setNote(value.humanId + " " + value.status) })
 					.catch(report)
 					.finally(() => setBusy(false))
@@ -415,7 +454,7 @@
 					.then((results) => {
 						const done = results.map((result) => result.direction + " " + result.remote).join(" · ")
 						setNote(t("syncDone") + ": " + done)
-						return load(status, query, labelFilters)
+						return reload()
 					})
 					.catch(report)
 					.finally(() => setBusy(false))
@@ -437,7 +476,45 @@
 			const identity = overview == null ? null : overview.identity
 			const identityText = overview == null ? "" : identity == null ? t("noIdentity") + " (" + t("firstWrite") + ")" : identity.name + " (" + identity.humanId + ")"
 			const unavailable = overview != null && overview.availability != null && overview.availability.available === false
-			const rows = (list ?? []).map((issue) => h(IssueRow, { key: issue.id, issue, selected: issue.humanId === selected, onSelect: setSelected }))
+
+			// Paging is over what the request already returned: the CLI has no offset, so the
+			// server sorts and caps, and the panel shows one page of that ordered set.
+			const matches = list ?? []
+			const pageCount = Math.max(1, Math.ceil(matches.length / PAGE_SIZE))
+			const current = Math.min(page, pageCount)
+			const rows = matches
+				.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
+				.map((issue) => h(IssueRow, { key: issue.id, issue, selected: issue.humanId === selected, onSelect: setSelected }))
+
+			// The label filter is a cloud of toggles: everything the vocabulary offers plus
+			// every label the repository actually uses, selected in place.
+			const toggleLabel = (value) => setLabelFilters(labelFilters.includes(value)
+				? labelFilters.filter((candidate) => candidate !== value)
+				: [...labelFilters, value])
+			const labelCloud = (vocabulary == null ? [] : vocabulary.suggestions).map((value) => h("button", {
+				key: value,
+				type: "button",
+				className: "gb-chip" + (labelFilters.includes(value) ? " gb-chip-on" : ""),
+				"aria-pressed": labelFilters.includes(value),
+				onClick: () => toggleLabel(value),
+			}, value))
+
+			const sortOptions = [["edit", t("edited")], ["creation", t("created")], ["id", t("id")]]
+			const sortChips = sortOptions.map(([value, text]) => h("button", {
+				key: value,
+				type: "button",
+				className: "gb-chip" + (sort === value ? " gb-chip-on" : ""),
+				onClick: () => setSort(value),
+			}, text))
+			const directionChips = [["desc", t("newest")], ["asc", t("oldest")]].map(([value, text]) => h("button", {
+				key: value,
+				type: "button",
+				className: "gb-chip" + (direction === value ? " gb-chip-on" : ""),
+				onClick: () => setDirection(value),
+			}, text))
+			// What the collapsed Advanced button is hiding, so a filtered list never looks
+			// like an empty one.
+			const advancedCount = labelFilters.length + (sort === "edit" ? 0 : 1) + (direction === "desc" ? 0 : 1)
 
 			return h("div", { className: "gb-overlay", role: "dialog", "aria-modal": "true", "aria-label": t("title") },
 				h("div", { className: "gb-panel" },
@@ -448,7 +525,7 @@
 							h("div", { className: "gb-meta" }, [counts, identityText, overview == null ? "" : overview.repoPath].filter((value) => value.length > 0).join(" · "))
 						),
 						h("div", { className: "gb-spacer" }),
-						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => load(status, query, labelFilters) }, t("refresh")),
+						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => reload() }, t("refresh")),
 						h("button", { type: "button", className: "gb-btn", disabled: busy, title: t("pull") + " → " + t("push"), onClick: sync }, t("sync")),
 						h("button", { type: "button", className: "gb-btn", onClick: props.hide }, t("close"))
 					),
@@ -461,37 +538,51 @@
 								h("div", { className: "gb-filters" },
 									chips,
 									h("div", { className: "gb-spacer" }),
+									h("button", {
+										type: "button",
+										className: "gb-btn" + (advancedCount > 0 ? " gb-btn-on" : ""),
+										"aria-expanded": advanced,
+										onClick: () => setAdvanced(!advanced),
+									}, t("advanced") + (advancedCount > 0 ? " · " + String(advancedCount) : "")),
 									h("button", { type: "button", className: "gb-btn gb-btn-primary", onClick: () => setCreating(!creating) }, creating ? t("cancel") : "+ " + t("newIssue"))
 								),
-								h("div", { className: "gb-search" },
-									h("input", {
-										className: "gb-input",
-										placeholder: t("search"),
-										value: query,
-										onChange: (event) => setQuery(event.target.value),
-									}),
-									h("select", {
-										className: "gb-input gb-select",
-										value: "",
-										"aria-label": t("filterLabel"),
-										onChange: (event) => {
-											const value = event.target.value
-											if (value.length === 0 || labelFilters.includes(value)) return
-											setLabelFilters([...labelFilters, value])
-										},
-									},
-										h("option", { value: "" }, t("filterLabel")),
-										(vocabulary == null ? [] : vocabulary.suggestions).map((value) => h("option", { key: value, value }, value))
+								h("input", {
+									className: "gb-input",
+									placeholder: t("search"),
+									value: query,
+									onChange: (event) => setQuery(event.target.value),
+								}),
+								advanced ? h("div", { className: "gb-advanced" },
+									h("div", { className: "gb-advanced-row" },
+										h("span", { className: "gb-row-label" }, t("labels")),
+										h("div", { className: "gb-cloud" },
+											labelCloud.length === 0 ? h("span", { className: "gb-hint" }, t("noLabels")) : labelCloud
+										)
+									),
+									h("div", { className: "gb-advanced-row" },
+										h("span", { className: "gb-row-label" }, t("sort")),
+										h("div", { className: "gb-filters" }, sortChips, directionChips),
+										h("div", { className: "gb-spacer" }),
+										h("span", { className: "gb-hint" }, t("matches", { n: String(matches.length) })),
+										h("div", { className: "gb-pager" },
+											h("button", {
+												type: "button",
+												className: "gb-btn",
+												title: t("previousPage"),
+												disabled: current <= 1,
+												onClick: () => setPage(current - 1),
+											}, "‹"),
+											h("span", { className: "gb-hint" }, t("pageOf", { n: String(current), total: String(pageCount) })),
+											h("button", {
+												type: "button",
+												className: "gb-btn",
+												title: t("nextPage"),
+												disabled: current >= pageCount,
+												onClick: () => setPage(current + 1),
+											}, "›")
+										)
 									)
-								),
-								labelFilters.length === 0 ? null : h("div", { className: "gb-filters" },
-									labelFilters.map((value) => h("button", {
-										key: value,
-										type: "button",
-										className: "gb-chip gb-chip-on",
-										title: t("remove"),
-										onClick: () => setLabelFilters(labelFilters.filter((candidate) => candidate !== value)),
-									}, value + " ×")))
+								) : null
 							),
 							h("datalist", { id: "gb-label-options" },
 								(vocabulary == null ? [] : vocabulary.suggestions).map((value) => h("option", { key: value, value }))

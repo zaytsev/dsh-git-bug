@@ -246,6 +246,23 @@ test('a query is translated into flags, never forwarded as query syntax', async 
   ]])
 })
 
+test('a caller-supplied ordering wins over the default, and a query sort over the flag default', async () => {
+  const seen = []
+  const run = async ({ argv }) => {
+    seen.push(argv.slice(1))
+    return { code: 0, stdout: '[]', stderr: '' }
+  }
+  const api = createGitBug({ run, repoPath: '/tmp/repo' })
+  await api.list({ sort: 'creation', direction: 'asc' })
+  await api.list({})
+  await api.list({ query: 'sort:edit-asc' })
+  assert.deepEqual(seen.map(args => args.slice(args.indexOf('--by'))), [
+    ['--by', 'creation', '--direction', 'asc'],
+    ['--by', 'edit', '--direction', 'desc'],
+    ['--by', 'edit', '--direction', 'asc'],
+  ])
+})
+
 test('a malformed qualifier is answered with the vocabulary, not with a CLI error', async () => {
   let calls = 0
   const run = async () => {

@@ -56,6 +56,12 @@ test('serves the overview, creates an issue, comments, and closes it', async () 
     const byLabel = await (await fetch(`${api.base}/issues?label=agent-task`)).json()
     assert.equal(byLabel.issues.length, 1, 'label filters are structured')
 
+    // Ordering and paging are the panel's parameters, not client-side sorting.
+    for (const query of ['sort=creation&direction=asc', 'sort=id&direction=desc', 'sort=nonsense&direction=sideways']) {
+      const ordered = await (await fetch(`${api.base}/issues?${query}`)).json()
+      assert.equal(ordered.issues.length, 1, `${query} still returns the match`)
+    }
+
     // An explicit query is validated before it reaches the CLI, so the panel
     // shows the accepted vocabulary rather than a raw git-bug diagnostic.
     const rejected = await fetch(`${api.base}/issues?query=${encodeURIComponent('status:')}`)

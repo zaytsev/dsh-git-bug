@@ -255,14 +255,21 @@ accepting them in `query`; the *shipped vocabulary* just never makes you remembe
 
 A sidebar footer action (`sidebar.footer.action`) opens a full-screen overlay (`shell.overlay`)
 rendered by the browser half. It talks to the server half over the plugin's own JSON API — no RPC
-plumbing, no session needed — and shows repository truth: the same list the agent reads. Issue text
-is Markdown, rendered by the shell; the search box is literal, labels are a picker, and one Sync
-button pulls and then pushes.
+plumbing, no session needed — and shows repository truth: the same list the agent reads.
+
+Two controls are visible: the status chips and a literal search box. Everything else waits behind one
+`Advanced` toggle — the label cloud (one toggle chip per label: the configured vocabulary plus every
+label the repository actually uses), the sort key and its direction, and the pager. The toggle carries
+a count of what it is hiding, so a filtered list never looks like an empty one.
+
+The server sorts and caps a request at 200 matches; the panel pages that ordered set 20 rows at a
+time, because git-bug's list command has no offset to page with. Issue text is Markdown, rendered by
+the shell, and one `Sync` button pulls and then pushes.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/git-bug/v1/overview` | GET | Repository, identity, counts, issues, availability. |
-| `/git-bug/v1/issues` | GET / POST | Filtered list / create. GET takes `status`, repeated `label`, repeated literal `search` terms, and a validated `query`. |
+| `/git-bug/v1/issues` | GET / POST | Filtered list / create. GET takes `status`, repeated `label`, repeated literal `search` terms, a validated `query`, `sort` (`edit`/`creation`/`id`), `direction` (`asc`/`desc`) and `limit`. |
 | `/git-bug/v1/issues/:id` | GET | Detail with comments. |
 | `/git-bug/v1/issues/:id/comments` | POST | Add a comment. |
 | `/git-bug/v1/issues/:id/status` | POST | Open or close. |
