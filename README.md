@@ -156,7 +156,7 @@ Invalid configuration throws at load, not on the first tool call.
 
 | Tool | Arguments | Purpose |
 |---|---|---|
-| `git_bug_list` | `status`, `labels[]`, `search[]`, `limit`, `sort`, `direction` | Read the shared list; the first thing to do before planning. |
+| `git_bug_list` | `status`, `labels[]`, `search[]`, `query`, `limit`, `sort`, `direction` | Read the shared list; the first thing to do before planning. |
 | `git_bug_show` | `id` | One issue with all comments. |
 | `git_bug_create` | `title`, `message`, `labels[]` | Put a unit of work on the list before starting it. |
 | `git_bug_comment` | `id`, `message` | Progress, decisions, blockers. |
@@ -168,6 +168,22 @@ Invalid configuration throws at load, not on the first tool call.
 Ids may be full or the short human id shown in lists (`0f43de6`). Failures are classified, so the
 model reads what to do next: not a repository, no identity, no such bug, another process holding the
 repository lock, or a timeout.
+
+### Filters
+
+`git_bug_list` has two filter modes, and they never mix:
+
+- **Structured parameters** — `status`, `labels[]`, `search[]` — map onto git-bug's own flags.
+  A `search` term is matched against issue titles literally, so `component:ui` stays a term.
+- **`query`** takes git-bug's query language (`status:open sort:creation-asc`) for what the
+  parameters cannot express. `src/query.js` parses and validates it before any process starts, so a
+  malformed qualifier is answered with the accepted vocabulary (`status: label: author: actor:
+  participant: title: metadata: no: sort:`) rather than with the CLI's `Error: empty qualifier or
+  value`. Quoting a term makes it literal.
+
+The split exists because positional arguments *are* query syntax to `git-bug bug`: a half-typed
+qualifier is a parse error and a legitimate label is an "unknown qualifier". The panel's search box
+therefore only ever sends `search` terms, and its label filters are a picker over the vocabulary.
 
 ## How the agent is made aware, without touching the cache
 
@@ -237,7 +253,7 @@ plumbing, no session needed — and shows repository truth: the same list the ag
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/git-bug/v1/overview` | GET | Repository, identity, counts, issues, availability. |
-| `/git-bug/v1/issues` | GET / POST | Filtered list / create. |
+| `/git-bug/v1/issues` | GET / POST | Filtered list / create. GET takes `status`, repeated `label`, repeated literal `search` terms, and a validated `query`. |
 | `/git-bug/v1/issues/:id` | GET | Detail with comments. |
 | `/git-bug/v1/issues/:id/comments` | POST | Add a comment. |
 | `/git-bug/v1/issues/:id/status` | POST | Open or close. |
@@ -245,8 +261,9 @@ plumbing, no session needed — and shows repository truth: the same list the ag
 | `/git-bug/v1/sync` | POST | Push or pull. |
 | `/git-bug/v1/identity` | GET / POST | Read or create the identity. |
 
-Failures keep their classification: `404` no such bug, `409` repository not writable yet (no
-identity / not a git repository), `503` git-bug missing, `504` timeout.
+Failures keep their classification: `400` a filter that is not valid git-bug syntax, `404` no such
+bug, `409` repository not writable yet (no identity / not a git repository), `503` git-bug missing,
+`504` timeout.
 
 ## Repository layout
 
@@ -254,6 +271,7 @@ identity / not a git repository), `503` git-bug missing, `504` timeout.
 index.js                 package entry (re-exports the server plugin)
 cordis.patch.yml         the loader row
 src/git-bug.js           git-bug CLI adapter: argv, JSON normalization, failure classes, lock queue
+src/query.js             the filter vocabulary: literal terms, and a validated query parser
 src/format.js            text projections (list, detail, digest)
 src/subprocess-runner.js execution through ctx.subprocess
 src/server/index.js      plugin: config, tools, prompt section, API mount

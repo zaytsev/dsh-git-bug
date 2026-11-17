@@ -451,11 +451,38 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
     if (node.type === 'option' && node.props?.value !== undefined) options.push(node.props.value)
     collectOptions(node.children ?? node.props?.children ?? null)
   }
-  collectOptions(withForm)
+  // Only the datalist's options: the label filter picker reuses the same list.
+  collectOptions(find(withForm, node => node.props?.id === 'gb-label-options'))
   // Merge rule: configured suggestions first, then the repository's own labels,
   // de-duplicated — the panel never hardcodes a label list of its own.
   const expectedOptions = [...new Set([...overview.labelVocabulary.suggestions, ...overview.labelsInUse])]
   assert.deepEqual([...new Set(options)], expectedOptions)
+
+  // Filters are structured controls: a label reaches the API as a label parameter
+  // and renders as a removable chip, so no typed text can become query syntax.
+  const picker = find(withForm, node => node.type === 'select')
+  assert.ok(picker !== null, 'the label picker is a select over the shared vocabulary')
+  picker.props.onChange({ target: { value: 'legacy-thing' } })
+  const filtered = await driver.mount(overlay.component, panelProps)
+  assert.ok(
+    calls.some(call => call.url.includes('/issues?') && call.url.includes('label=legacy-thing')),
+    'the chosen label is a request parameter',
+  )
+  const filterChip = buttonByText(filtered, 'legacy-thing ×')
+  assert.ok(filterChip !== null, 'an active label filter renders as a chip')
+  filterChip.props.onClick()
+  await driver.mount(overlay.component, panelProps)
+  const after = calls.filter(call => call.url.includes('/issues?')).at(-1)
+  assert.doesNotMatch(after.url, /label=/, 'removing the chip drops the filter')
+
+  // Every word is one title term: the search box cannot express a query.
+  const search = find(filtered, node => node.type === 'input' && node.props?.placeholder === 'Search titles')
+  assert.ok(search !== null, 'the search box says what it searches')
+  search.props.onChange({ target: { value: 'render  panel' } })
+  await driver.mount(overlay.component, panelProps)
+  const terms = calls.filter(call => call.url.includes('/issues?')).at(-1)
+  assert.match(terms.url, /search=render/)
+  assert.match(terms.url, /search=panel/)
 
   // The overview the panel renders is the same read that publishes the sidebar count.
   assert.equal(face.hooks.openCount.getSnapshot(), 1)

@@ -48,6 +48,22 @@ test('serves the overview, creates an issue, comments, and closes it', async () 
     const listed = await (await fetch(`${api.base}/issues?status=open`)).json()
     assert.equal(listed.issues.length, 1)
     assert.equal(listed.issues[0].title, 'Panel task')
+
+    // The search box is literal: a half-typed qualifier is a title term, so it
+    // matches nothing instead of returning git-bug's parse error.
+    const literal = await (await fetch(`${api.base}/issues?status=open&search=${encodeURIComponent('status:')}`)).json()
+    assert.deepEqual(literal.issues, [])
+    const byLabel = await (await fetch(`${api.base}/issues?label=agent-task`)).json()
+    assert.equal(byLabel.issues.length, 1, 'label filters are structured')
+
+    // An explicit query is validated before it reaches the CLI, so the panel
+    // shows the accepted vocabulary rather than a raw git-bug diagnostic.
+    const rejected = await fetch(`${api.base}/issues?query=${encodeURIComponent('status:')}`)
+    assert.equal(rejected.status, 400)
+    const failure = await rejected.json()
+    assert.equal(failure.kind, 'invalid-filter')
+    assert.match(failure.error, /empty value/)
+    assert.match(failure.error, /status: label:/)
     assert.deepEqual(listed.issues[0].labels, ['agent-task'])
 
     const id = created.humanId

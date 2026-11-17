@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { GitBugFailure, GitBugFailureKind, identityOf, issueDetailOf, issueSummaryOf } from '../src/git-bug.js'
+import { GitBugFailure, GitBugFailureKind, createGitBug, identityOf, issueDetailOf, issueSummaryOf } from '../src/git-bug.js'
 import { adapter, childProcessRunner, git, makeRepo } from './support.mjs'
 
 test('normalizes a serialized bug summary', () => {
@@ -116,9 +116,13 @@ test('creates, reads, comments on, labels, and closes a bug', async () => {
   assert.doesNotThrow(async () => api.labels())
 
   await api.create({ title: 'Second task' })
-  const searched = await api.list({ search: ['Wire'] })
+  const searched = await api.list({ titles: ['Wire'] })
   assert.equal(searched.length, 1)
   assert.equal(searched[0].title, 'Wire the panel')
+  // A search term is literal. It reaches the CLI as --title, so the colon in this
+  // term can never be read as a qualifier by git-bug's own parser.
+  assert.equal((await api.list({ titles: ['status:'] })).length, 0)
+  assert.equal((await api.list({ titles: ['wire'] })).length, 1)
   assert.equal((await api.list({ limit: 1 })).length, 1)
 })
 
@@ -212,4 +216,50 @@ test('a timed-out command is reported instead of hanging', async () => {
       return true
     },
   )
+})
+
+test('a query is translated into flags, never forwarded as query syntax', async () => {
+  const seen = []
+  const run = async ({ argv }) => {
+    seen.push(argv.slice(1))
+    return { code: 0, stdout: '[]', stderr: '' }
+  }
+  const api = createGitBug({ run, repoPath: '/tmp/repo' })
+  await api.list({
+    status: 'open',
+    labels: ['bug'],
+    titles: ['status:'],
+    query: 'label:component:ui sort:creation-asc "component:ui" https',
+  })
+  // One argv, in full: every qualifier became a flag, every search term is a
+  // --title value, and the single bare word keeps full text search working.
+  // Nothing is handed to git-bug's parser, so a colon can never be reused as
+  // syntax.
+  assert.deepEqual(seen, [[
+    'bug', '--format', 'json',
+    '--status', 'open',
+    '--label', 'bug', '--label', 'component:ui',
+    '--title', 'status:', '--title', 'component:ui',
+    '--by', 'creation', '--direction', 'asc',
+    'https',
+  ]])
+})
+
+test('a malformed qualifier is answered with the vocabulary, not with a CLI error', async () => {
+  let calls = 0
+  const run = async () => {
+    calls += 1
+    return { code: 0, stdout: '[]', stderr: '' }
+  }
+  const api = createGitBug({ run, repoPath: '/tmp/repo' })
+  await assert.rejects(
+    () => api.list({ query: 'status:' }),
+    (error) => {
+      assert.equal(error.kind, GitBugFailureKind.INVALID_FILTER)
+      assert.match(error.message, /empty value/)
+      assert.match(error.message, /status: label: author: actor: participant: title: metadata: no: sort:/)
+      return true
+    },
+  )
+  assert.equal(calls, 0, 'the command never starts, so no CLI diagnostic can surface')
 })

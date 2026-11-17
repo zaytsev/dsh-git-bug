@@ -10,6 +10,7 @@
 
 import { GitBugFailure, GitBugFailureKind } from '../git-bug.js'
 import { formatVocabulary } from '../labels.js'
+import { qualifierSummary } from '../query.js'
 import { formatIssueDetail, formatIssueList } from '../format.js'
 
 /** Parameter schema shared by every id-taking tool. */
@@ -47,6 +48,8 @@ export function toolErrorText(error, context = {}) {
       return `git-bug did not finish in time: ${error.message}.`
     case GitBugFailureKind.LOCKED:
       return `Another git-bug process holds this repository: ${error.message}. Wait a moment and retry.`
+    case GitBugFailureKind.INVALID_FILTER:
+      return `Nothing ran: that filter is not valid for git-bug. ${error.message}`
     default:
       return `git-bug failed: ${error.message}`
   }
@@ -136,11 +139,20 @@ export function registerTools(ctx, deps) {
       + 'This is the workspace\'s shared task list and the only way to see it: the system prompt does '
       + 'not carry the issue list, so call this before planning multi-step work, and again after a '
       + 'sync to see what other sessions or people changed. '
-      + 'Filters: status, labels, full-text terms, and a result cap.',
+      + 'Filters: status, labels, literal title terms, a git-bug query, and a result cap.',
     parameters: {
       status: { type: 'string', enum: ['open', 'closed', 'all'], description: 'Only issues in this status. Default open+closed.' },
       labels: { type: 'array', items: { type: 'string' }, description: 'Only issues carrying every one of these labels.' },
-      search: { type: 'array', items: { type: 'string' }, description: 'Full-text terms matched against titles and comments.' },
+      search: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Literal terms matched against issue titles. A term containing a colon is matched literally, never parsed.',
+      },
+      query: {
+        type: 'string',
+        description: 'git-bug query syntax, for what the parameters above cannot express, e.g. "label:component:ui sort:creation-asc". '
+          + `Qualifiers: ${qualifierSummary()}. A query is validated before git-bug runs; quote a term to search it literally.`,
+      },
       limit: { type: 'integer', description: 'Maximum issues to return (default 50).' },
       sort: { type: 'string', enum: ['edit', 'creation', 'id'], description: 'Ordering key. Default edit.' },
       direction: { type: 'string', enum: ['asc', 'desc'], description: 'Ordering direction. Default desc.' },
@@ -153,7 +165,8 @@ export function registerTools(ctx, deps) {
       const issues = await repo.list({
         status,
         labels: Array.isArray(args.labels) ? args.labels.map(String) : [],
-        search: Array.isArray(args.search) ? args.search.map(String) : [],
+        titles: Array.isArray(args.search) ? args.search.map(String) : [],
+        query: typeof args.query === 'string' ? args.query : '',
         limit: Number.isInteger(args.limit) ? args.limit : 50,
         sort: ['edit', 'creation', 'id'].includes(args.sort) ? args.sort : 'edit',
         direction: args.direction === 'asc' ? 'asc' : 'desc',

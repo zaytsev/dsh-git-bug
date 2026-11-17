@@ -138,7 +138,8 @@ export function createApiHandler(deps) {
           const issues = await repo.list({
             status: status === 'open' || status === 'closed' ? status : undefined,
             labels: repeated(url, 'label'),
-            search: repeated(url, 'search'),
+            titles: repeated(url, 'search'),
+            query: url.searchParams.get('query') ?? '',
             limit: positiveInt(url, 'limit', 200),
           })
           send(res, 200, { issues, taskLabel: config.taskLabel, labelVocabulary: vocabulary ?? null })

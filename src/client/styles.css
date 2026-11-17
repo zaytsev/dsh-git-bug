@@ -32,6 +32,8 @@
 .gb-chip{padding:3px 10px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:999px;background:0 0;color:inherit;cursor:pointer;font-size:12px}
 .gb-suggests{display:flex;flex-wrap:wrap;gap:4px}
 .gb-chip-on{background:var(--dsw-alias-fill-l2,rgba(255,255,255,.12));border-color:var(--dsw-alias-border-l3,#555)}
+.gb-search{display:flex;gap:6px}
+.gb-select{flex:none;width:150px}
 .gb-input{width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:8px;background:var(--dsw-specific-input,rgba(0,0,0,.25));color:inherit;font:inherit;font-size:12px}
 .gb-input:focus{outline:1px solid var(--dsw-alias-brand-primary,#4a6cf7)}
 .gb-rows{flex:1;overflow:auto}

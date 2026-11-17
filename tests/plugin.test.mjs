@@ -60,7 +60,11 @@ test('tool descriptions steer the agent to the shared task list', async () => {
   const repoPath = await makeRepo()
   const fake = await activate(repoPath)
   const byName = new Map(fake.tools.map(tool => [tool.name, tool]))
-  assert.match(byName.get('git_bug_list').description, /shared task list/)
+  const listTool = byName.get('git_bug_list')
+  assert.match(listTool.description, /shared task list/)
+  assert.match(listTool.description, /literal title terms/)
+  assert.match(listTool.parameters.properties.search.description, /colon is matched literally/)
+  assert.match(listTool.parameters.properties.query.description, /status: label: author:/)
   assert.match(byName.get('git_bug_create').description, /`ai` marks work an agent owns/)
   assert.match(byName.get('git_bug_create').description, /kind \(bug, feature, enhancement, refactor, docs, todo\)/)
   assert.match(byName.get('git_bug_sync').description, /push|pull/)
@@ -339,4 +343,17 @@ test('promptSection false leaves the prompt untouched', async () => {
   const fake = await activate(repoPath, { config: { promptSection: false } })
   assert.equal(fake.sections.length, 0)
   assert.equal(fake.tools.length, TOOL_NAMES.length)
+})
+test('a malformed query is answered with the vocabulary, not with the CLI', async () => {
+  const repoPath = await makeRepo()
+  const fake = await activate(repoPath)
+  const list = fake.tools.find(tool => tool.name === 'git_bug_list')
+  await assert.rejects(
+    () => list.execute({ query: 'status:' }, {}),
+    (error) => {
+      assert.match(error.message, /Nothing ran/)
+      assert.match(error.message, /Qualifiers: status: label: author: actor: participant: title: metadata: no: sort:/)
+      return true
+    },
+  )
 })

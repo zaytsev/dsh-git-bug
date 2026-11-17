@@ -20,7 +20,9 @@
 				open: "进行中",
 				closed: "已关闭",
 				all: "全部",
-				search: "搜索标题与评论",
+				search: "搜索标题",
+				filterLabel: "按标签筛选",
+				remove: "移除",
 				noIssues: "没有匹配的议题",
 				pickIssue: "选择左侧议题查看详情",
 				newIssue: "新建议题",
@@ -56,7 +58,9 @@
 				open: "Open",
 				closed: "Closed",
 				all: "All",
-				search: "Search titles and comments",
+				search: "Search titles",
+				filterLabel: "Filter by label",
+				remove: "Remove",
 				noIssues: "No issues match",
 				pickIssue: "Select an issue to read it",
 				newIssue: "New issue",
@@ -292,6 +296,7 @@
 			const [selected, setSelected] = react.useState(null)
 			const [status, setStatus] = react.useState("open")
 			const [query, setQuery] = react.useState("")
+			const [labelFilters, setLabelFilters] = react.useState([])
 			const [creating, setCreating] = react.useState(false)
 			const [busy, setBusy] = react.useState(false)
 			const [error, setError] = react.useState(null)
@@ -299,11 +304,14 @@
 
 			const report = (failure) => setError(failure instanceof Error ? failure.message : String(failure))
 
-			const load = react.useCallback((nextStatus, nextQuery) => {
+			const load = react.useCallback((nextStatus, nextQuery, nextLabels) => {
 				setError(null)
 				const params = new URLSearchParams()
 				if (nextStatus !== "all") params.set("status", nextStatus)
-				if (nextQuery.trim().length > 0) params.set("search", nextQuery.trim())
+				// Search text is literal: every word becomes one title term, so this box can
+				// never turn into git-bug's query language. Only the tools accept a query.
+				for (const term of nextQuery.trim().split(/\s+/).filter((value) => value.length > 0)) params.append("search", term)
+				for (const label of nextLabels) params.append("label", label)
 				return Promise.all([props.loadOverview(), api("/issues?" + params.toString())])
 					.then(([head, body]) => {
 						setOverview(head)
@@ -312,7 +320,7 @@
 					.catch(report)
 			}, [])
 
-			react.useEffect(() => { void load(status, query) }, [load, status, query])
+			react.useEffect(() => { void load(status, query, labelFilters) }, [load, status, query, labelFilters])
 
 			react.useEffect(() => {
 				if (selected === null) return
@@ -341,7 +349,7 @@
 					.then((created) => {
 						setCreating(false)
 						setNote(created.humanId + " " + created.title)
-						return load(status, query)
+						return load(status, query, labelFilters)
 					})
 					.catch(report)
 					.finally(() => setBusy(false))
@@ -359,7 +367,7 @@
 			const toggleStatus = (next) => {
 				if (selected === null) return Promise.resolve()
 				return start().then(() => api("/issues/" + encodeURIComponent(selected) + "/status", { method: "POST", body: JSON.stringify({ status: next }) }))
-					.then(() => Promise.all([api("/issues/" + encodeURIComponent(selected)), load(status, query)]))
+					.then(() => Promise.all([api("/issues/" + encodeURIComponent(selected)), load(status, query, labelFilters)]))
 					.then(([value]) => { setDetail(value); setNote(value.humanId + " " + value.status) })
 					.catch(report)
 					.finally(() => setBusy(false))
@@ -376,7 +384,7 @@
 
 			const sync = (action) => {
 				return start().then(() => api("/sync", { method: "POST", body: JSON.stringify({ action }) }))
-					.then((result) => { setNote(t("syncDone") + ": " + result.direction); return load(status, query) })
+					.then((result) => { setNote(t("syncDone") + ": " + result.direction); return load(status, query, labelFilters) })
 					.catch(report)
 					.finally(() => setBusy(false))
 			}
@@ -408,7 +416,7 @@
 							h("div", { className: "gb-meta" }, [counts, identityText, overview == null ? "" : overview.repoPath].filter((value) => value.length > 0).join(" · "))
 						),
 						h("div", { className: "gb-spacer" }),
-						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => load(status, query) }, t("refresh")),
+						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => load(status, query, labelFilters) }, t("refresh")),
 						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => sync("pull") }, t("pull")),
 						h("button", { type: "button", className: "gb-btn", disabled: busy, onClick: () => sync("push") }, t("push")),
 						h("button", { type: "button", className: "gb-btn", onClick: props.hide }, t("close"))
@@ -424,12 +432,35 @@
 									h("div", { className: "gb-spacer" }),
 									h("button", { type: "button", className: "gb-btn gb-btn-primary", onClick: () => setCreating(!creating) }, creating ? t("cancel") : "+ " + t("newIssue"))
 								),
-								h("input", {
-									className: "gb-input",
-									placeholder: t("search"),
-									value: query,
-									onChange: (event) => setQuery(event.target.value),
-								})
+								h("div", { className: "gb-search" },
+									h("input", {
+										className: "gb-input",
+										placeholder: t("search"),
+										value: query,
+										onChange: (event) => setQuery(event.target.value),
+									}),
+									h("select", {
+										className: "gb-input gb-select",
+										value: "",
+										"aria-label": t("filterLabel"),
+										onChange: (event) => {
+											const value = event.target.value
+											if (value.length === 0 || labelFilters.includes(value)) return
+											setLabelFilters([...labelFilters, value])
+										},
+									},
+										h("option", { value: "" }, t("filterLabel")),
+										(vocabulary == null ? [] : vocabulary.suggestions).map((value) => h("option", { key: value, value }, value))
+									)
+								),
+								labelFilters.length === 0 ? null : h("div", { className: "gb-filters" },
+									labelFilters.map((value) => h("button", {
+										key: value,
+										type: "button",
+										className: "gb-chip gb-chip-on",
+										title: t("remove"),
+										onClick: () => setLabelFilters(labelFilters.filter((candidate) => candidate !== value)),
+									}, value + " ×")))
 							),
 							h("datalist", { id: "gb-label-options" },
 								(vocabulary == null ? [] : vocabulary.suggestions).map((value) => h("option", { key: value, value }))

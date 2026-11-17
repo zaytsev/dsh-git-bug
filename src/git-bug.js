@@ -12,6 +12,8 @@
  * @module dsh-git-bug/git-bug
  */
 
+import { FilterError, parseQuery } from './query.js'
+
 /** The executable this adapter drives. */
 export const GIT_BUG_COMMAND = 'git-bug'
 
@@ -35,6 +37,8 @@ export const GitBugFailureKind = Object.freeze({
   TIMEOUT: 'timeout',
   /** Another git-bug process holds this repository's lock. */
   LOCKED: 'locked',
+  /** A filter this plugin refused to translate, so no command was run. */
+  INVALID_FILTER: 'invalid-filter',
   /** The command failed for any other reason. */
   COMMAND_FAILED: 'command-failed',
 })
@@ -310,15 +314,40 @@ export function createGitBug(options) {
 
     /**
      * List bugs, optionally filtered.
-     * @param query - status, label, and full-text filters plus a result cap.
+     *
+     * Two kinds of filter arrive here and they never mix: the structured
+     * parameters (status, labels, literal title terms) and an optional git-bug
+     * query string, which is parsed and validated before anything runs. A term
+     * the caller calls "search" is matched against titles with --title, so it is
+     * never handed to git-bug's parser and never has to be escaped.
+     * @param query - structured filters, literal title terms, a query string, and a result cap.
      * @returns matching bug summaries, newest edit first when no order is given.
      */
     async list(query = {}) {
       const args = ['bug', '--format', 'json']
-      if (query.status === 'open' || query.status === 'closed') args.push('--status', query.status)
-      for (const label of query.labels ?? []) args.push('--label', label)
-      args.push('--by', query.sort ?? 'edit', '--direction', query.direction ?? 'desc')
-      for (const term of query.search ?? []) args.push(term)
+      let filter
+      try {
+        filter = parseQuery(typeof query.query === 'string' ? query.query : '')
+      } catch (error) {
+        if (error instanceof FilterError) {
+          throw new GitBugFailure(error.message, {
+            kind: GitBugFailureKind.INVALID_FILTER,
+            argv: [GIT_BUG_COMMAND, ...args],
+          })
+        }
+        throw error
+      }
+      const status = query.status === 'open' || query.status === 'closed' ? query.status : filter.status
+      if (status === 'open' || status === 'closed') args.push('--status', status)
+      for (const label of [...(query.labels ?? []), ...filter.labels]) args.push('--label', String(label))
+      for (const author of filter.authors) args.push('--author', author)
+      for (const actor of filter.actors) args.push('--actor', actor)
+      for (const participant of filter.participants) args.push('--participant', participant)
+      for (const metadata of filter.metadata) args.push('--metadata', metadata)
+      for (const value of filter.absence) args.push('--no', value)
+      for (const title of [...(query.titles ?? []), ...filter.titles]) args.push('--title', String(title))
+      args.push('--by', query.sort ?? filter.sort ?? 'edit', '--direction', query.direction ?? filter.direction ?? 'desc')
+      for (const term of filter.terms) args.push(term)
       const raw = await execJson(args)
       const issues = (Array.isArray(raw) ? raw : []).map(issueSummaryOf).filter(issue => issue !== null)
       const limit = query.limit ?? issues.length
