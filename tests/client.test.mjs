@@ -285,6 +285,13 @@ test('the sidebar action right-aligns the open-issue count', () => {
   const action = registrations.find(entry => entry.options.name === 'sidebar.footer.action')
   const face = action.options.inject()
 
+  // The sidebar foot lays actions out in a row: one action owns one full-width row
+  // (ui-cordis CordisPanel .layer does the same), so the entry must not shrink.
+  const actionRule = /\.gb-action\{[^}]*\}/.exec(exports.__internals.CSS)?.[0] ?? ''
+  assert.match(actionRule, /width:100%/)
+  assert.match(actionRule, /flex:none/)
+  assert.doesNotMatch(actionRule, /flex:1 1 auto/)
+
   const wide = action.component({ wide: true, show: face.show, useOpenCount: () => 3 })
   assert.equal(wide.type, 'button')
   assert.match(textOf(wide), /Issues/)
