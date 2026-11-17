@@ -302,9 +302,12 @@ Suites:
 |---|---|
 | `tests/git-bug.test.mjs` | The adapter against the real executable: create/read/comment/label/close round trips, long bodies over stdin, remote push into a second clone, failure classes, timeouts. |
 | `tests/format.test.mjs` | Text projections. |
+| `tests/query.test.mjs` | The filter vocabulary: term splitting and quoting, qualifier-to-filter mapping, and every malformed case (`empty value`, `unknown qualifier`, bad enum, missing `key=value`) answering with the accepted list. |
+| `tests/labels.test.mjs` | The default label vocabulary and its formatting, including that it states it is a framework and not a rule. |
+| `tests/build.test.mjs` | The generated browser half: every stylesheet selector is present in the bundle, no CSS is authored in the factory, and the build is byte-deterministic. |
 | `tests/api.test.mjs` | The HTTP API on a real server: every endpoint, error statuses, identity bootstrap, sync round trip. |
 | `tests/plugin.test.mjs` | Activation: tool surface and schemas, prompt section content and ordering, route mount, headless composition, config validation. |
-| `tests/client.test.mjs` | The built browser half: loader handoff, slot registrations, visibility source, API error mapping, and a render of the panel with fetched issue data (skipped when no React install is resolvable). |
+| `tests/client.test.mjs` | The built browser half: loader handoff, slot registrations, visibility source, API error mapping, the Markdown body path with and without the shell's renderer, and a render of the panel with fetched issue data — including label filters, literal search, and the single sync control (skipped when no React install is resolvable). |
 | `tests/harness.test.mjs` | The whole loop: boots `dsh --profile headless --patch cordis.patch.yml` against a stub provider, then asserts the prompt section is present, every step of a writing turn reused a **byte-identical** system prompt, all eight tools are offered with valid schemas, and a `git_bug_create` round trip really writes to git-bug. Skipped when no `@deepseek-ai/dsh` install is resolvable. |
 
 The render and harness suites resolve React and the harness packages from an installed profile
@@ -318,7 +321,7 @@ Runs below were executed in this repository on the date shown, inside `nix devel
 
 | Check | Command | Result |
 |---|---|---|
-| Test suite | `npm run check` | 39 tests, 39 pass, 0 fail |
+| Test suite | `npm run check` | 59 tests, 59 pass, 0 fail |
 | Live web profile | `dsh --profile web --patch <pkg>/cordis.patch.yml` against a scratch `DSH_HOME` | boots; `__DSH_BOOT__` carries the `dsh-git-bug` row at `/plugins/dsh-git-bug/client.js`, the bundle is served 200, `/git-bug/v1/overview` reports the bound repository, and API create/comment/status/label writes landed in git-bug |
 | ENTRY (static) | `npx -p dsh-standards dsh-standards . --scope entry --entry-claim static --runtime-version 0.2.2-rc.1` | `status=pass`, `DSH-ENTRY recognized`, blocking 0, WARN DSC-11 (`C-11.5`, see below) |
 | ENTRY (runtime) | `npx -p dsh-standards dsh-standards . --scope entry --entry-claim runtime --runtime <cordis>/lib/index.js --runtime-version 0.2.2-rc.1` | `status=pass`, `DSH-ENTRY runtime`, blocking 0; DSC-04/06/07/09/14 PASS; WARN DSC-08 (`C-8.2`, revision/epoch unchanged under L1) |
