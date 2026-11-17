@@ -248,7 +248,9 @@ descriptions, the panel's chips and label autocomplete (served from `/overview`)
 
 A sidebar footer action (`sidebar.footer.action`) opens a full-screen overlay (`shell.overlay`)
 rendered by the browser half. It talks to the server half over the plugin's own JSON API — no RPC
-plumbing, no session needed — and shows repository truth: the same list the agent reads.
+plumbing, no session needed — and shows repository truth: the same list the agent reads. Issue text
+is Markdown, rendered by the shell; the search box is literal, labels are a picker, and one Sync
+button pulls and then pushes.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
@@ -338,6 +340,13 @@ Two guards keep it honest (`tests/build.test.mjs`): every selector in the styles
 the built bundle (a stale build fails the suite), and no line in `factory.js` may exceed 400
 characters (CSS leaking back into code fails the suite). There is no bundler, so no class-name
 hashing — the `gb-` prefix is this plugin's namespace by convention.
+
+Issue bodies and comments are rendered with the shell's own renderer: the bundle requires
+`@deepseek-ai/dsh-client-ui-primitives` from the platform module table and uses `MarkdownText`, the
+same component the conversation renders replies with. The plugin therefore adds no Markdown
+dependency, and inherits the posture that component already has — raw HTML, relative links and unsafe
+protocols disabled. Titles stay plain text. A shell that does not expose the module degrades the
+panel to pre-wrapped plain text instead of failing to load.
 
 ## Declared capabilities
 

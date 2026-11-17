@@ -4,6 +4,17 @@
 		// so the panel needs no RPC plumbing and renders repository truth directly.
 		const react = require("react")
 		const h = react.createElement
+		// Issue text is untrusted Markdown, so it is rendered by the shell's own renderer
+		// from the platform module table. One resolution, defensively: a shell without it
+		// degrades the panel to plain text instead of failing to load.
+		const Markdown = (function () {
+			try {
+				const primitives = require("@deepseek-ai/dsh-client-ui-primitives")
+				return primitives != null && primitives.MarkdownText != null ? primitives.MarkdownText : null
+			} catch (error) {
+				return null
+			}
+		})()
 
 		const API_BASE = "/git-bug/v1"
 		const STYLE_ID = "dsh-git-bug"
@@ -133,6 +144,17 @@
 			)
 		}
 
+		/**
+		 * One Markdown block: an issue body or a comment. Titles stay plain text, and
+		 * the fallback keeps the text readable (pre-wrapped) when no renderer is loaded.
+		 */
+		function MarkdownBody(props) {
+			const text = typeof props.text === "string" ? props.text : ""
+			return h("div", { className: "gb-md" },
+				Markdown === null ? h("div", { className: "gb-plain" }, text) : h(Markdown, { text })
+			)
+		}
+
 		function Label(props) {
 			return h("span", { className: "gb-label" }, props.children)
 		}
@@ -192,7 +214,7 @@
 			const labels = detail.labels.map((value) => h(Label, { key: value }, value))
 			const comments = detail.comments.map((entry, index) => h("div", { key: entry.id || String(index), className: "gb-comment" },
 				h("div", { className: "gb-comment-head" }, (entry.author == null ? "" : entry.author.name + " · ") + entry.humanId),
-				h("div", { className: "gb-comment-body" }, entry.message)
+				h(MarkdownBody, { text: entry.message })
 			))
 			const submitComment = () => {
 				if (comment.trim().length === 0) return
@@ -589,4 +611,4 @@
 
 		exports.apply = apply
 		exports.inject = inject
-		exports.__internals = { STRINGS, LANG, t, createVisibility, api, stamp }
+		exports.__internals = { STRINGS, LANG, t, createVisibility, api, stamp, MarkdownBody }

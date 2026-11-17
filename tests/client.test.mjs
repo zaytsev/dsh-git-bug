@@ -48,7 +48,7 @@ const stubReact = {
 }
 
 /** Load the built bundle and materialize its factory against one require. */
-function loadBundle(reactModule) {
+function loadBundle(reactModule, primitives) {
   let handoff = null
   const listeners = new Map()
   const sandbox = {
@@ -75,6 +75,7 @@ function loadBundle(reactModule) {
   assert.ok(handoff !== null, 'the bundle must register with window.__ModuleLoader__')
   const exports = handoff.factory((specifier) => {
     if (specifier === 'react') return reactModule
+    if (primitives !== undefined && specifier === '@deepseek-ai/dsh-client-ui-primitives') return primitives
     throw new Error(`unexpected require("${specifier}")`)
   })
   return { id: handoff.id, exports, sandbox }
@@ -344,6 +345,20 @@ test('stamps timestamps in UTC minutes', () => {
   assert.equal(exports.__internals.stamp(null), '')
 })
 
+test('issue text uses the shell renderer, and stays readable without one', () => {
+  const plain = loadBundle(stubReact).exports.__internals.MarkdownBody({ text: 'a *b*' })
+  assert.equal(plain.props.className, 'gb-md')
+  const fallback = find(plain, node => node.props?.className === 'gb-plain')
+  assert.ok(fallback !== null, 'no renderer is not a crash')
+  assert.equal(textOf(fallback), 'a *b*')
+
+  const stub = { MarkdownText: 'markdown-stub' }
+  const rich = loadBundle(stubReact, stub).exports.__internals.MarkdownBody({ text: 'a *b*' })
+  const rendered = find(rich, node => node.type === 'markdown-stub')
+  assert.ok(rendered !== null, 'the platform component is used when it is there')
+  assert.equal(rendered.props.text, 'a *b*')
+})
+
 const realReact = loadReact()
 
 test('the panel renders repository truth and drives the API', { skip: realReact === null ? 'no react install found; set DSH_TEST_NODE_MODULES to a node_modules directory holding react' : false }, async () => {
@@ -382,9 +397,18 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   }
   const detail = { ...summary, comments: [{ id: 'c1', humanId: 'c1', author: summary.author, message: 'first body', createdAt: null }], commentCount: 1 }
 
+  // The shell's Markdown renderer is a platform module: the panel must render issue
+  // text through it, and never through a Markdown library of its own.
+  const markdownSeen = []
+  const primitives = {
+    MarkdownText(props) {
+      markdownSeen.push(props.text)
+      return createElement('md-stub', null, props.text)
+    },
+  }
   const driver = createDriver()
   const reactModule = { ...realReact, ...driver.hooks }
-  const { exports, sandbox } = loadBundle(reactModule)
+  const { exports, sandbox } = loadBundle(reactModule, primitives)
   sandbox.fetch = async (url, options) => {
     calls.push({ url, method: options?.method ?? 'GET', body: options?.body })
     const respond = (value) => ({ ok: true, status: 200, json: async () => value })
@@ -429,6 +453,10 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
 
   const settled = await driver.mount(overlay.component, panelProps)
   assert.match(textOf(settled), /first body/)
+  assert.ok(markdownSeen.some(text => text.includes('first body')), 'the issue body goes through the shell renderer')
+  assert.ok(find(settled, node => node.type === 'md-stub') !== null, 'and renders as Markdown, not as a text node')
+  // Titles are plain text: only bodies and comments are Markdown.
+  assert.equal(find(settled, node => node.type === 'md-stub' && textOf(node).includes('Render the issues panel')), null)
   assert.ok(calls.some(call => call.url.endsWith('/issues/aaaaaaa')))
 
   const closeButton = buttonByText(settled, 'Mark done')
