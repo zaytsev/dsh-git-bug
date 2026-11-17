@@ -37,6 +37,29 @@ nix build .#plugin         # the installable plugin tree
 nix run .#install          # links it into ${DSH_HOME:-~/.config/dsh}/node_modules/dsh-git-bug
 ```
 
+Or take it as an overlay, which puts the plugin in `pkgs.dshPlugins`:
+
+```nix
+{
+  inputs.dsh-git-bug.url = "github:you/dsh-git-bug";   # or path:/path/to/dsh-git-bug
+
+  # wherever your nixpkgs is instantiated
+  nixpkgs.overlays = [ inputs.dsh-git-bug.overlays.default ];
+}
+```
+
+Then `pkgs.dshPlugins.dsh-git-bug` is the same derivation as this flake's `packages.<system>.plugin`,
+e.g. for a home-manager install:
+
+```nix
+home.file.".config/dsh/node_modules/dsh-git-bug".source = pkgs.dshPlugins.dsh-git-bug;
+```
+
+The overlay merges into an existing `dshPlugins` set rather than replacing it, so several plugin
+flakes compose. The set is also exported directly as
+`inputs.dsh-git-bug.dshPlugins.${system}.dsh-git-bug` for consumers that would rather read an output
+than instantiate an overlay.
+
 Once this directory is a git repository, Nix only sees **tracked** files: with the tree untracked,
 `nix develop` fails with "is not tracked by Git" and `nix build` would ship an empty package. Run
 `git add -A` (and commit) first, or the flake will not see the package sources.
