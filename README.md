@@ -174,7 +174,7 @@ repository lock, or a timeout.
 `git_bug_list` has two filter modes, and they never mix:
 
 - **Structured parameters** — `status`, `labels[]`, `search[]` — map onto git-bug's own flags.
-  A `search` term is matched against issue titles literally, so `component:ui` stays a term.
+  A `search` term is matched against issue titles literally, so `component/ui` stays a term.
 - **`query`** takes git-bug's query language (`status:open sort:creation-asc`) for what the
   parameters cannot express. `src/query.js` parses and validates it before any process starts, so a
   malformed qualifier is answered with the accepted vocabulary (`status: label: author: actor:
@@ -234,15 +234,22 @@ a repository can replace any group through `labelVocabulary`.
 | Group | Labels | Intended use |
 |---|---|---|
 | kind | `bug` `feature` `enhancement` `refactor` `docs` `todo` | what the issue is; pick one |
-| priority | `priority:low` `priority:normal` `priority:high` `priority:urgent` | how soon |
-| severity | `severity:minor` `severity:major` `severity:critical` `severity:blocker` | how bad; bugs only |
+| priority | `priority/low` `priority/normal` `priority/high` `priority/urgent` | how soon |
+| severity | `severity/minor` `severity/major` `severity/critical` `severity/blocker` | how bad; bugs only |
 | state | `blocked` `needs-info` `duplicate` `wontfix` `cant-reproduce` | why an issue is not simply open |
 | ownership | `ai` | work an agent owns |
-| component | `component:<area>` — e.g. `component:panel`, `component:nix` | which part of the codebase |
+| component | `component/<area>` — e.g. `component/panel`, `component/nix` | which part of the codebase |
 
 One source feeds all four surfaces: the system-prompt rule, the `git_bug_create` / `git_bug_label`
 descriptions, the panel's chips and label autocomplete (served from `/overview`), and this table.
-`component:` is the only open prefix — everything else is a closed group.
+`component/` is the only open prefix — everything else is a closed group.
+
+**Why `/` and not `:`.** git-bug's query grammar puts `:` between a qualifier and its value and splits
+at the *last* colon, so a label containing one cannot be written unquoted — `git-bug bug
+'label:priority:high'` fails with `unknown qualifier "label:priority"`, while `label:"priority:high"`
+works and `label:priority/high` needs no quoting at all (checked against v0.11.0). Labels with colons
+are still legal in the repository and still filter correctly through `--label`, so the plugin keeps
+accepting them in `query`; the *shipped vocabulary* just never makes you remember to quote.
 
 ## The panel
 
@@ -372,7 +379,10 @@ real; only its spelling is outside the scanner's trigger surface.
   as `locked` rather than retried forever.
 - No git-bug *bridge* support (`git-bug bridge` to GitHub/GitLab/Jira): issues are synchronized
   through git remotes only.
-- The panel does not render comment markdown; issue text is shown verbatim.
+- Issue text is Markdown rendered by the shell's own component; a shell without
+  `@deepseek-ai/dsh-client-ui-primitives` falls back to pre-wrapped plain text.
+- Labels are a flat string namespace: `component/` is a naming convention this vocabulary adds, not a
+  git-bug hierarchy, and a colon inside a label needs quoting in git-bug's own query language.
 - Product copy is English, with a Simplified Chinese translation selected from the browser language.
 
 ## License

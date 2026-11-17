@@ -150,7 +150,7 @@ export function registerTools(ctx, deps) {
       },
       query: {
         type: 'string',
-        description: 'git-bug query syntax, for what the parameters above cannot express, e.g. "label:component:ui sort:creation-asc". '
+        description: 'git-bug query syntax, for what the parameters above cannot express, e.g. "label:component/ui sort:creation-asc". '
           + `Qualifiers: ${qualifierSummary()}. A query is validated before git-bug runs; quote a term to search it literally.`,
       },
       limit: { type: 'integer', description: 'Maximum issues to return (default 50).' },

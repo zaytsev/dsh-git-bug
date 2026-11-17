@@ -25,8 +25,21 @@ export const STATES = ['blocked', 'needs-info', 'duplicate', 'wontfix', 'cant-re
 /** Marks work an agent owns. */
 export const OWNERSHIP = 'ai'
 
-/** Prefix for the free-form component label, e.g. `component:panel`. */
-export const COMPONENT_PREFIX = 'component:'
+/**
+ * What separates a label group from its value: `priority/high`, `component/ui`.
+ *
+ * Checked against git-bug v0.11.0, because the obvious separator is the wrong one:
+ * the query grammar puts `:` between a qualifier and its value and splits at the
+ * *last* colon, so a label containing one cannot be written unquoted —
+ * `git-bug bug 'label:priority:high'` fails with `unknown qualifier "label:priority"`,
+ * while `label:"priority:high"` works and `label:priority/high` needs no quoting at
+ * all. Slash keeps every label filter expressible the plain way, in the panel, in
+ * the tools and in a human's own shell.
+ */
+export const GROUP_SEPARATOR = '/'
+
+/** Prefix for the free-form component label, e.g. `component/panel`. */
+export const COMPONENT_PREFIX = 'component' + GROUP_SEPARATOR
 
 /**
  * Order-preserving de-duplication.
@@ -44,8 +57,8 @@ function unique(values) {
  */
 export function labelVocabulary(overrides = {}) {
   const kinds = overrides.kinds ?? KINDS
-  const priorities = (overrides.priorities ?? PRIORITIES).map(level => `priority:${level}`)
-  const severities = (overrides.severities ?? SEVERITIES).map(level => `severity:${level}`)
+  const priorities = (overrides.priorities ?? PRIORITIES).map(level => 'priority' + GROUP_SEPARATOR + level)
+  const severities = (overrides.severities ?? SEVERITIES).map(level => 'severity' + GROUP_SEPARATOR + level)
   const states = overrides.states ?? STATES
   const ownership = overrides.ownership ?? OWNERSHIP
   const componentPrefix = overrides.componentPrefix ?? COMPONENT_PREFIX
@@ -56,7 +69,7 @@ export function labelVocabulary(overrides = {}) {
     states,
     ownership,
     componentPrefix,
-    // What a picker offers; component: stays free text past the prefix.
+    // What a picker offers; the component prefix stays free text past itself.
     suggestions: unique([...kinds, ...priorities, ...severities, ...states, ownership]),
   }
 }

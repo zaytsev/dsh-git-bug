@@ -229,17 +229,18 @@ test('a query is translated into flags, never forwarded as query syntax', async 
     status: 'open',
     labels: ['bug'],
     titles: ['status:'],
-    query: 'label:component:ui sort:creation-asc "component:ui" https',
+    query: 'label:component/ui label:priority:high sort:creation-asc "component/ui" https',
   })
   // One argv, in full: every qualifier became a flag, every search term is a
   // --title value, and the single bare word keeps full text search working.
   // Nothing is handed to git-bug's parser, so a colon can never be reused as
-  // syntax.
+  // syntax — which is also why a legacy colon label survives here while it would
+  // need quoting in git-bug's own query language.
   assert.deepEqual(seen, [[
     'bug', '--format', 'json',
     '--status', 'open',
-    '--label', 'bug', '--label', 'component:ui',
-    '--title', 'status:', '--title', 'component:ui',
+    '--label', 'bug', '--label', 'component/ui', '--label', 'priority:high',
+    '--title', 'status:', '--title', 'component/ui',
     '--by', 'creation', '--direction', 'asc',
     'https',
   ]])

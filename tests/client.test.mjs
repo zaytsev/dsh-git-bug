@@ -373,12 +373,12 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
     taskLabel: 'ai',
     labelVocabulary: {
       kinds: ['bug', 'feature'],
-      priorities: ['priority:low', 'priority:high'],
-      severities: ['severity:minor'],
+      priorities: ['priority/low', 'priority/high'],
+      severities: ['severity/minor'],
       states: ['blocked'],
       ownership: 'ai',
-      componentPrefix: 'component:',
-      suggestions: ['bug', 'feature', 'priority:high', 'ai'],
+      componentPrefix: 'component/',
+      suggestions: ['bug', 'feature', 'priority/high', 'ai'],
     },
     labelsInUse: ['legacy-thing', 'bug'],
     availability: { available: true, version: 'v0.11.0' },
@@ -470,7 +470,7 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   assert.ok(openForm !== null, 'the create-form toggle is present')
   openForm.props.onClick()
   const withForm = await driver.mount(overlay.component, panelProps)
-  const chip = buttonByText(withForm, 'priority:high')
+  const chip = buttonByText(withForm, 'priority/high')
   assert.ok(chip !== null, 'a suggested label renders as a chip')
   const options = []
   const collectOptions = (node) => {

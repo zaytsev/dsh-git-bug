@@ -35,6 +35,17 @@ test('qualifiers become filters a caller can hand to flags', () => {
   assert.deepEqual(filters.terms, ['full', 'text'])
 })
 
+test('a grouped label value is a slash path, and a colon value still maps to a label', () => {
+  const filters = parseQuery('label:priority/high label:component/ui')
+  assert.deepEqual(filters.labels, ['priority/high', 'component/ui'])
+
+  // Leniency, deliberately: a repository may already hold colon labels. git-bug
+  // needs those quoted in its own query language, but the flag form takes them
+  // verbatim, and a flag is what this parser produces.
+  const legacy = parseQuery('label:priority:high')
+  assert.deepEqual(legacy.labels, ['priority:high'])
+})
+
 test('a quoted term is literal, even when it looks like a qualifier', () => {
   const filters = parseQuery('"component:ui" "status:"')
   assert.deepEqual(filters.titles, ['component:ui', 'status:'])
