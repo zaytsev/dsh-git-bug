@@ -61,7 +61,8 @@ test('tool descriptions steer the agent to the shared task list', async () => {
   const fake = await activate(repoPath)
   const byName = new Map(fake.tools.map(tool => [tool.name, tool]))
   assert.match(byName.get('git_bug_list').description, /shared task list/)
-  assert.match(byName.get('git_bug_create').description, /agent-task/)
+  assert.match(byName.get('git_bug_create').description, /`ai` marks work an agent owns/)
+  assert.match(byName.get('git_bug_create').description, /kind \(bug, feature, enhancement, refactor, docs, todo\)/)
   assert.match(byName.get('git_bug_sync').description, /push|pull/)
   assert.match(byName.get('git_bug_show').description, /comments/)
 })
@@ -133,7 +134,7 @@ test('seeds the session with the live counts and the read-first rule', async () 
   const repoPath = await makeRepo()
   const fake = await activate(repoPath)
   const create = fake.tools.find(tool => tool.name === 'git_bug_create')
-  await create.execute({ title: 'Existing task', labels: ['agent-task'] }, {})
+  await create.execute({ title: 'Existing task', labels: ['ai', 'legacy-thing'] }, {})
 
   assert.ok(fake.events().includes('agent/session-start'))
   const injected = []
@@ -158,7 +159,9 @@ test('seeds the session with the live counts and the read-first rule', async () 
   }
   const withCounts = injected.at(-1).content[0].text
   assert.match(withCounts, /1 open/)
-  assert.match(withCounts, /1 labelled `agent-task`/)
+  assert.match(withCounts, /1 labelled `ai`/)
+  assert.match(withCounts, /Labels in use here: .*legacy-thing/, 'the cue names the labels really in use')
+  assert.doesNotMatch(fake.sections[0].text, /legacy-thing/, 'the prompt stays a static vocabulary')
 })
 
 test('the session cue reports an empty list as a starting point', async () => {
@@ -242,7 +245,8 @@ test('the prompt section is a stable function of config, with no repository stat
   assert.match(text, /git_bug_list/)
   assert.match(text, /git_bug_create/)
   assert.match(text, /todo_write/)
-  assert.match(text, /agent-task/)
+  assert.match(text, /`ai` for work an agent owns/)
+  assert.match(text, /kind \(bug, feature, enhancement, refactor, docs, todo\)/)
   assert.match(text, /remote \`origin\`/)
   // No live state may appear: a provider caches request prefixes byte-for-byte.
   assert.doesNotMatch(text, /Open issues/)
@@ -297,7 +301,7 @@ test('config defaults and validation are explicit', () => {
   assert.equal(defaults.repoPath, process.cwd())
   assert.equal(defaults.remote, 'origin')
   assert.equal(defaults.apiPath, '/git-bug/v1')
-  assert.equal(defaults.taskLabel, 'agent-task')
+  assert.equal(defaults.taskLabel, 'ai')
   assert.equal(defaults.autoCreateIdentity, true)
   assert.equal(defaults.promptSection, true)
   assert.equal(defaults.timeoutMs, 30_000)

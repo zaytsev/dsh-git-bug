@@ -9,6 +9,7 @@
  */
 
 import { GitBugFailure, GitBugFailureKind } from '../git-bug.js'
+import { formatVocabulary } from '../labels.js'
 import { formatIssueDetail, formatIssueList } from '../format.js'
 
 /** Parameter schema shared by every id-taking tool. */
@@ -191,8 +192,9 @@ export function registerTools(ctx, deps) {
       'Create a git-bug issue in the current repository. Use it to put a unit of work on the '
       + 'shared, persistent task list before starting it: the title is the task, the message is '
       + 'the plan or acceptance criteria, and labels classify it. '
-      + `The label ${config.taskLabel} marks a task that an agent owns. Creates are visible to the user `
-      + 'immediately in the Issues panel and to other sessions after a push.',
+      + `\`${config.taskLabel}\` marks work an agent owns. Creates are visible to the user `
+      + 'immediately in the Issues panel and to other sessions after a push. '
+      + `${formatVocabulary(config.labelVocabulary)}`,
     parameters: {
       title: { type: 'string', description: 'One-line task title.', required: true },
       message: { type: 'string', description: 'Body: plan, context, acceptance criteria.' },
@@ -271,8 +273,9 @@ export function registerTools(ctx, deps) {
     name: 'git_bug_label',
     description:
       'Add or remove one label on a git-bug issue. Labels are the shared vocabulary of the task '
-      + `list; use ${config.taskLabel} for agent-owned tasks, and add a label per workstream so the `
-      + 'Issues panel stays filterable.',
+      + `list; use \`${config.taskLabel}\` for work an agent owns, and add one per workstream so the `
+      + 'Issues panel stays filterable. '
+      + `${formatVocabulary(config.labelVocabulary)}`,
     parameters: {
       id: ID_PARAMETER,
       label: { type: 'string', description: 'Label text.', required: true },

@@ -110,6 +110,11 @@ test('creates, reads, comments on, labels, and closes a bug', async () => {
   assert.equal((await api.list({ status: 'closed' })).length, 1)
   assert.equal(await api.setStatus(id, 'open'), 'open')
 
+  const overview = await api.overview()
+  assert.ok(overview.labels.includes('agent-task'), 'the labels in use are listed')
+  assert.ok(!overview.labels.includes('never-used'), 'and only those in use')
+  assert.doesNotThrow(async () => api.labels())
+
   await api.create({ title: 'Second task' })
   const searched = await api.list({ search: ['Wire'] })
   assert.equal(searched.length, 1)

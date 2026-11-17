@@ -216,6 +216,7 @@
 						}, detail.status === "closed" ? t("reopen") : t("markClosed")),
 						h("input", {
 							className: "gb-input",
+							list: "gb-label-options",
 							style: { width: "180px" },
 							placeholder: t("labels"),
 							value: label,
@@ -248,6 +249,13 @@
 			const [title, setTitle] = react.useState("")
 			const [message, setMessage] = react.useState("")
 			const [labels, setLabels] = react.useState("")
+			const suggestions = props.suggestions ?? []
+			const current = labels.split(",").map((value) => value.trim()).filter((value) => value.length > 0)
+			const toggle = (label) => {
+				setLabels((current.includes(label)
+					? current.filter((value) => value !== label)
+					: [...current, label]).join(", "))
+			}
 			const submit = () => {
 				if (title.trim().length === 0) return
 				const list = labels.split(",").map((value) => value.trim()).filter((value) => value.length > 0)
@@ -260,7 +268,15 @@
 			return h("div", { className: "gb-form" },
 				h("input", { className: "gb-input", placeholder: t("issueTitle"), value: title, onChange: (event) => setTitle(event.target.value) }),
 				h("textarea", { className: "gb-input gb-textarea", placeholder: t("issueBody"), value: message, onChange: (event) => setMessage(event.target.value) }),
-				h("input", { className: "gb-input", placeholder: t("issueLabels"), value: labels, onChange: (event) => setLabels(event.target.value) }),
+				h("input", { className: "gb-input", list: "gb-label-options", placeholder: t("issueLabels"), value: labels, onChange: (event) => setLabels(event.target.value) }),
+				suggestions.length === 0 ? null : h("div", { className: "gb-suggests" },
+					suggestions.map((value) => h("button", {
+						key: value,
+						type: "button",
+						className: "gb-chip" + (current.includes(value) ? " gb-chip-on" : ""),
+						onClick: () => toggle(value),
+					}, value))
+				),
 				h("div", { style: { display: "flex", gap: "8px" } },
 					h("button", { type: "button", className: "gb-btn gb-btn-primary", disabled: props.busy || title.trim().length === 0, onClick: submit }, t("create")),
 					h("button", { type: "button", className: "gb-btn", onClick: props.onClose }, t("cancel"))
@@ -372,6 +388,11 @@
 				onClick: () => setStatus(value),
 			}, t(value)))
 
+			// Configured vocabulary leads; the repository's own labels follow, so the
+			// pickers reflect what is really in use — legacy and ad-hoc labels included.
+			const vocabulary = overview != null && overview.labelVocabulary != null
+				? { suggestions: [...new Set([...(overview.labelVocabulary.suggestions ?? []), ...(overview.labelsInUse ?? [])])] }
+				: null
 			const counts = overview === null ? "" : overview.counts.open + " " + t("open").toLowerCase() + " · " + overview.counts.closed + " " + t("closed").toLowerCase()
 			const identity = overview == null ? null : overview.identity
 			const identityText = overview == null ? "" : identity == null ? t("noIdentity") + " (" + t("firstWrite") + ")" : identity.name + " (" + identity.humanId + ")"
@@ -410,7 +431,10 @@
 									onChange: (event) => setQuery(event.target.value),
 								})
 							),
-							creating ? h(CreateForm, { busy, onCreate: create, onClose: () => setCreating(false) }) : null,
+							h("datalist", { id: "gb-label-options" },
+								(vocabulary == null ? [] : vocabulary.suggestions).map((value) => h("option", { key: value, value }))
+							),
+							creating ? h(CreateForm, { busy, onCreate: create, onClose: () => setCreating(false), suggestions: vocabulary == null ? [] : vocabulary.suggestions }) : null,
 							h("div", { className: "gb-rows" },
 								list === null ? h("div", { className: "gb-empty" }, t("loading")) : rows.length === 0 ? h("div", { className: "gb-empty" }, t("noIssues")) : rows
 							)
@@ -464,7 +488,6 @@
 		/** How often the sidebar count re-reads the repository while the page is open. */
 		const COUNT_POLL_MS = 30000
 
-		const CSS = ".gb-action{display:inline-flex;flex:0 1 auto;align-items:center;gap:6px;min-width:0;min-height:28px;padding:3px 6px;border:0;border-radius:8px;background:0 0;color:var(--dsw-alias-label-tertiary,#8b8b8b);cursor:pointer;font:inherit}\n.gb-action:hover,.gb-action:focus-visible{color:var(--dsw-alias-label-primary,#eee);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))}\n.gb-action svg{flex:none}\n.gb-action-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-action-count{margin-left:auto;padding-left:8px;flex:none;color:var(--dsw-alias-label-tertiary,#8b8b8b);font-size:11px;font-variant-numeric:tabular-nums}\n.gb-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.45)}\n.gb-panel{display:flex;flex-direction:column;width:min(1080px,100%);height:min(760px,100%);overflow:hidden;border:1px solid var(--dsw-alias-border-l2,#333);border-radius:14px;background:var(--dsw-specific-menu,#1b1b1f);color:var(--dsw-alias-label-primary,#eee);box-shadow:0 24px 64px rgba(0,0,0,.45)}\n.gb-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,#333)}\n.gb-title{font-size:15px;font-weight:600}\n.gb-meta{font-size:12px;color:var(--dsw-alias-label-tertiary,#8b8b8b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-spacer{flex:1}\n.gb-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:8px;background:0 0;color:inherit;cursor:pointer;font-size:12px}\n.gb-btn:hover:not(:disabled){background:var(--dsw-alias-fill-l1,rgba(255,255,255,.07))}\n.gb-btn:disabled{opacity:.5;cursor:default}\n.gb-btn-primary{background:var(--dsw-alias-button-primary-fill,#4a6cf7);border-color:transparent;color:var(--dsw-alias-label-primary-foreground,#fff)}\n.gb-btn-primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,#3a5be0)}\n.gb-body{display:flex;flex:1;min-height:0}\n.gb-list{display:flex;flex-direction:column;width:46%;min-width:320px;border-right:1px solid var(--dsw-alias-border-l2,#333)}\n.gb-tools{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-filters{display:flex;gap:6px;flex-wrap:wrap}\n.gb-chip{padding:3px 10px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:999px;background:0 0;color:inherit;cursor:pointer;font-size:12px}\n.gb-chip-on{background:var(--dsw-alias-fill-l2,rgba(255,255,255,.12));border-color:var(--dsw-alias-border-l3,#555)}\n.gb-input{width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid var(--dsw-alias-border-l2,#3a3a40);border-radius:8px;background:var(--dsw-specific-input,rgba(0,0,0,.25));color:inherit;font:inherit;font-size:12px}\n.gb-input:focus{outline:1px solid var(--dsw-alias-brand-primary,#4a6cf7)}\n.gb-rows{flex:1;overflow:auto}\n.gb-row{display:flex;gap:8px;align-items:flex-start;width:100%;padding:9px 12px;border:0;border-bottom:1px solid var(--dsw-alias-border-l2,#28282d);background:0 0;color:inherit;cursor:pointer;text-align:left;font:inherit}\n.gb-row:hover{background:var(--dsw-alias-fill-l1,rgba(255,255,255,.05))}\n.gb-row-on{background:var(--dsw-alias-fill-l2,rgba(255,255,255,.1))}\n.gb-dot{flex:none;width:8px;height:8px;margin-top:5px;border-radius:50%;background:#46c07a}\n.gb-dot-closed{background:#8b8b8b}\n.gb-row-main{flex:1;min-width:0}\n.gb-row-title{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.gb-row-sub{display:flex;gap:8px;margin-top:3px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b)}\n.gb-label{padding:0 6px;border-radius:999px;background:var(--dsw-alias-fill-l2,rgba(255,255,255,.1));font-size:10px}\n.gb-detail{display:flex;flex-direction:column;flex:1;min-width:0;overflow:auto}\n.gb-detail-head{padding:14px 16px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-detail-title{font-size:14px;font-weight:600}\n.gb-kv{margin-top:6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b);display:flex;gap:10px;flex-wrap:wrap}\n.gb-comments{display:flex;flex-direction:column;gap:10px;padding:14px 16px}\n.gb-comment{padding:9px 11px;border:1px solid var(--dsw-alias-border-l2,#2b2b30);border-radius:10px;background:rgba(255,255,255,.02)}\n.gb-comment-head{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b);margin-bottom:4px}\n.gb-comment-body{font-size:12px;white-space:pre-wrap;word-break:break-word}\n.gb-compose{display:flex;flex-direction:column;gap:8px;padding:0 16px 16px}\n.gb-textarea{min-height:84px;resize:vertical;font-family:inherit}\n.gb-empty{display:flex;flex:1;align-items:center;justify-content:center;padding:24px;color:var(--dsw-alias-label-tertiary,#8b8b8b);font-size:12px;text-align:center}\n.gb-error{margin:10px 16px;padding:8px 10px;border:1px solid #b4453f;border-radius:8px;background:rgba(180,69,63,.12);font-size:12px;white-space:pre-wrap}\n.gb-form{display:flex;flex-direction:column;gap:8px;padding:12px;border-bottom:1px solid var(--dsw-alias-border-l2,#2b2b30)}\n.gb-hint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b8b8b)}"
 
 		function apply(ctx) {
 			const style = document.createElement("style")

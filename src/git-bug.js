@@ -266,13 +266,31 @@ export function createGitBug(options) {
     remote,
 
     /**
-     * Read the repository's identity, bug count, and remotes in one pass.
+     * List the labels this repository actually uses.
+     *
+     * git-bug has no label policy and no JSON output here: `git-bug label`
+     * prints the labels in use, one per line. A failure is reported as "no
+     * labels" rather than failing the overview it feeds.
+     * @returns the labels in use, sorted.
+     */
+    async labels() {
+      try {
+        const { stdout } = await exec(['label'])
+        return [...new Set(stdout.split('\n').map(line => line.trim()).filter(line => line.length > 0))].sort()
+      } catch {
+        return []
+      }
+    },
+
+    /**
+     * Read the repository's identity, bug count, labels in use, and remotes in one pass.
      * @returns the repository overview.
      */
     async overview() {
-      const [identityList, issues] = await Promise.all([
+      const [identityList, issues, labels] = await Promise.all([
         execJson(['user', '--format', 'json']),
         execJson(['bug', '--format', 'json']),
+        this.labels(),
       ])
       const identities = Array.isArray(identityList) ? identityList.map(identityOf).filter(i => i !== null) : []
       const summaries = Array.isArray(issues) ? issues.map(issueSummaryOf).filter(issue => issue !== null) : []
@@ -280,6 +298,7 @@ export function createGitBug(options) {
         repoPath,
         remote,
         identities,
+        labels,
         issues: summaries,
         counts: {
           open: summaries.filter(issue => issue.status === 'open').length,

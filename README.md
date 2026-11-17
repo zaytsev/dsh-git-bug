@@ -139,7 +139,8 @@ Config is read from the row, e.g.:
 | `repoPath` | `process.cwd()` | Repository the plugin reads and writes. `~/` expands. One repository per plugin instance. |
 | `remote` | `origin` | Git remote used by `git_bug_sync` and the panel's pull/push buttons. |
 | `apiPath` | `/git-bug/v1` | Mount point of the panel's JSON API on the harness web server. |
-| `taskLabel` | `agent-task` | Label the prompt tells the agent to put on tasks it owns. |
+| `taskLabel` | `ai` | Label the prompt tells the agent to put on work it owns. |
+| `labelVocabulary` | the table below | Replace any group of suggested labels (`kinds`, `priorities`, `severities`, `states`, `ownership`, `componentPrefix`). |
 | `identity` | `{ name: 'DeepSeek Harness', email: 'harness@localhost' }` | Identity created in repositories that have none. |
 | `autoCreateIdentity` | `true` | Create that identity at activation instead of failing the first write. |
 | `promptSection` | `true` | Contribute the system-prompt section. |
@@ -208,6 +209,25 @@ Both append at the tail, so neither can move the cached prefix; both are switcha
 provider, drives a turn whose plan writes to git-bug, and asserts every step of the turn carried a
 **byte-identical** system prompt.
 
+## Labels
+
+A starting vocabulary, so an agent and a human reach for the same words instead of inventing
+one-offs. It is **not** a policy: nothing validates against it, any label is accepted everywhere, and
+a repository can replace any group through `labelVocabulary`.
+
+| Group | Labels | Intended use |
+|---|---|---|
+| kind | `bug` `feature` `enhancement` `refactor` `docs` `todo` | what the issue is; pick one |
+| priority | `priority:low` `priority:normal` `priority:high` `priority:urgent` | how soon |
+| severity | `severity:minor` `severity:major` `severity:critical` `severity:blocker` | how bad; bugs only |
+| state | `blocked` `needs-info` `duplicate` `wontfix` `cant-reproduce` | why an issue is not simply open |
+| ownership | `ai` | work an agent owns |
+| component | `component:<area>` — e.g. `component:panel`, `component:nix` | which part of the codebase |
+
+One source feeds all four surfaces: the system-prompt rule, the `git_bug_create` / `git_bug_label`
+descriptions, the panel's chips and label autocomplete (served from `/overview`), and this table.
+`component:` is the only open prefix — everything else is a closed group.
+
 ## The panel
 
 A sidebar footer action (`sidebar.footer.action`) opens a full-screen overlay (`shell.overlay`)
@@ -241,7 +261,8 @@ src/server/tools.js      the git_bug_* tool family
 src/server/prompt.js     the system-prompt section
 src/server/api.js        the panel's JSON API
 src/client/factory.js    browser half (slot registrations + panel)
-scripts/build-client.mjs wraps the browser half into the loader format
+src/client/styles.css    panel styles, inlined into the bundle at build time
+scripts/build-client.mjs wraps the browser half into the loader format and inlines styles.css
 scripts/stub-provider.mjs a DeepSeek-compatible stand-in used by the harness test
 tests/                   node:test suites
 ```
@@ -286,6 +307,19 @@ Runs below were executed in this repository on the date shown, inside `nix devel
 
 `DSC-03` did not run in either report: it needs an install spec, and the package profile does not
 carry one. These are check results, not a certification; a static result is not a runtime result.
+
+### The browser half's build
+
+`lib/client.js` is generated: `scripts/build-client.mjs` wraps `src/client/factory.js` in the loader
+registration the web client expects and injects `src/client/styles.css` as a string constant inside
+the factory closure. This mirrors the first-party client preset, which compiles `.module.css` files
+at build time and emits the rules beside the code — styles are authored, reviewed and diffed as CSS
+while the browser still receives one script.
+
+Two guards keep it honest (`tests/build.test.mjs`): every selector in the stylesheet must appear in
+the built bundle (a stale build fails the suite), and no line in `factory.js` may exceed 400
+characters (CSS leaking back into code fails the suite). There is no bundler, so no class-name
+hashing — the `gb-` prefix is this plugin's namespace by convention.
 
 ## Declared capabilities
 

@@ -100,7 +100,7 @@ function positiveInt(url, key, fallback) {
  * @returns the HTTP handler for the prefix route.
  */
 export function createApiHandler(deps) {
-  const { repo, config, availability } = deps
+  const { repo, config, availability, vocabulary } = deps
 
   /**
    * Dispatch one request under the API prefix.
@@ -125,6 +125,8 @@ export function createApiHandler(deps) {
           counts: overview.counts,
           issues: overview.issues,
           taskLabel: config.taskLabel,
+          labelVocabulary: vocabulary ?? null,
+          labelsInUse: overview.labels ?? [],
           availability: found,
         })
         return
@@ -139,7 +141,7 @@ export function createApiHandler(deps) {
             search: repeated(url, 'search'),
             limit: positiveInt(url, 'limit', 200),
           })
-          send(res, 200, { issues, taskLabel: config.taskLabel })
+          send(res, 200, { issues, taskLabel: config.taskLabel, labelVocabulary: vocabulary ?? null })
           return
         }
         if (method === 'POST') {

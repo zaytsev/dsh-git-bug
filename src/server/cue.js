@@ -28,6 +28,25 @@ export function contextMessage(plugin, text) {
   }
 }
 
+/** How many repository labels the cue names before it summarizes the rest. */
+const CUE_LABEL_LIMIT = 12
+
+/**
+ * The labels this repository actually uses, as a clause for the cue.
+ *
+ * The prompt stays a static vocabulary; the repository's own labels — legacy
+ * ones, ad-hoc ones, another plugin's — ride the injected cue instead, which
+ * appends at the tail and cannot move the cached prefix.
+ * @param labels - labels in use, or undefined when the read failed.
+ * @returns one clause, or an empty string when there is nothing to add.
+ */
+export function publishedLabels(labels) {
+  if (!Array.isArray(labels) || labels.length === 0) return ''
+  const shown = labels.slice(0, CUE_LABEL_LIMIT)
+  const rest = labels.length - shown.length
+  return ` Labels in use here: ${shown.join(', ')}${rest > 0 ? `, and ${String(rest)} more` : ''}.`
+}
+
 /**
  * The session-start cue: one line of current facts plus the rule that reads them.
  * @param overview - counts and issues read from the repository.
@@ -42,9 +61,10 @@ export function sessionCue(overview, taskLabel, repoPath) {
       `the shared list — and put the first unit of work on it with \`git_bug_create\` (label \`${taskLabel}\`).`
   }
   const labelled = countLabel(overview.issues, taskLabel)
+  const inUse = publishedLabels(overview.labels)
   return `git-bug task list (${repoPath}): ${String(open.length)} open · ${String(overview.counts.closed)} closed · ` +
-    `${String(labelled)} labelled \`${taskLabel}\`. Call \`git_bug_list\` before you plan: it is the shared list, ` +
-    'the user sees it in the Issues panel, and it outlives this session.'
+    `${String(labelled)} labelled \`${taskLabel}\`.${inUse} Call \`git_bug_list\` before you plan: it is the shared ` +
+    'list, the user sees it in the Issues panel, and it outlives this session.'
 }
 
 /**

@@ -28,6 +28,7 @@ import { createGitBug } from '../git-bug.js'
 import { createAvailabilityProbe, createSubprocessRunner } from '../subprocess-runner.js'
 import { createApiHandler } from './api.js'
 import { contextMessage, genericCue, sessionCue, todoNudge } from './cue.js'
+import { labelVocabulary } from '../labels.js'
 import { instructionText, SECTION_NAME } from './prompt.js'
 import { registerTools } from './tools.js'
 
@@ -41,7 +42,7 @@ export const inject = ['tools', 'systemPrompt', 'subprocess']
 export const DEFAULT_API_PATH = '/git-bug/v1'
 
 /** Default label that marks agent-owned tasks in the shared task list. */
-export const DEFAULT_TASK_LABEL = 'agent-task'
+export const DEFAULT_TASK_LABEL = 'ai'
 
 /** Default identity created in repositories that have none. */
 export const DEFAULT_IDENTITY = { name: 'DeepSeek Harness', email: 'harness@localhost' }
@@ -90,6 +91,9 @@ export function normalizeConfig(raw) {
     command: input.command === undefined ? 'git-bug' : String(input.command),
     apiPath: apiPath.replace(/\/+$/, ''),
     taskLabel: input.taskLabel === undefined ? DEFAULT_TASK_LABEL : String(input.taskLabel),
+    // Suggestions only: replacing a group changes what is offered, never what
+    // is accepted.
+    labelVocabulary: input.labelVocabulary === undefined ? labelVocabulary() : labelVocabulary(input.labelVocabulary),
     identity,
     autoCreateIdentity: input.autoCreateIdentity === undefined ? true : input.autoCreateIdentity === true,
     promptSection: input.promptSection === undefined ? true : input.promptSection === true,
@@ -194,7 +198,12 @@ export function apply(ctx, rawConfig) {
       () => sub.webServer.register({
         kind: 'prefix',
         path: config.apiPath,
-        handler: createApiHandler({ repo, config, availability }),
+        handler: createApiHandler({
+          repo,
+          config,
+          availability,
+          vocabulary: config.labelVocabulary,
+        }),
       }),
       'dsh-git-bug: issues api',
     )

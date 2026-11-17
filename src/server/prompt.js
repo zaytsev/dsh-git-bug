@@ -12,6 +12,8 @@
  * @module dsh-git-bug/server/prompt
  */
 
+import { formatVocabulary } from '../labels.js'
+
 /** Section name registered with the system-prompt registry. */
 export const SECTION_NAME = 'dsh-git-bug'
 
@@ -55,7 +57,8 @@ export function instructionText(config) {
       `Issues panel, or be shared goes to git-bug instead.`,
     '4. The user sees and edits the same issues in the Issues panel: treat issue text as shared '
       + 'state, not as scratch space, and never rewrite an issue title or body that someone else wrote.',
-    `5. \`git_bug_sync\` with action \`pull\` refreshes from the git remote and ` +
+    `5. ${formatVocabulary(config.labelVocabulary)}`,
+    `6. \`git_bug_sync\` with action \`pull\` refreshes from the git remote and ` +
       `\`push\` publishes; pull before trusting an id you did not just see, and push only when ` +
       `the user asks to share.`,
   ].join('\n')

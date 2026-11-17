@@ -92,7 +92,7 @@ test('the assembled prompt is byte-stable across a turn that writes to git-bug',
   await shell(['git-bug', 'bug', 'new', '-t', 'Seeded shared task', '-m', 'Body of the seeded task.', '--non-interactive'], repo)
 
   const plan = [
-    { name: 'git_bug_create', args: { title: 'Agent wrote this', message: 'Written by the verification run.', labels: ['agent-task'] } },
+    { name: 'git_bug_create', args: { title: 'Agent wrote this', message: 'Written by the verification run.', labels: ['ai', 'bug'] } },
     { name: 'git_bug_list', args: { status: 'open' } },
   ]
   const stubEnv = { ...TEST_ENV, DSH_STUB_LOG: requestLog, DSH_STUB_PLAN: JSON.stringify(plan) }
@@ -150,13 +150,14 @@ test('the assembled prompt is byte-stable across a turn that writes to git-bug',
       assert.ok(toolNames.includes(name), `the request must offer ${name}`)
     }
     const createSchema = first.tools.find(tool => tool.function.name === 'git_bug_create')
-    assert.match(createSchema.function.description, /agent-task/)
+    assert.match(createSchema.function.description, /`ai` marks work an agent owns/)
+    assert.match(createSchema.function.description, /kind \(bug, feature, enhancement, refactor, docs, todo\)/)
     assert.equal(createSchema.function.parameters.properties.title.type, 'string')
 
     const toolResults = requests
       .flatMap(request => request.messages.filter(message => message.role === 'tool'))
       .map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content))
-    assert.ok(toolResults.some(text => /created [0-9a-f]{7} with labels agent-task: Agent wrote this/.test(text)), 'the create tool returned its issue id to the model')
+    assert.ok(toolResults.some(text => /created [0-9a-f]{7} with labels ai, bug: Agent wrote this/.test(text)), 'the create tool returned its issue id to the model')
     assert.ok(toolResults.some(text => text.includes('Agent wrote this')), 'the list tool showed the created issue')
 
     const listed = await run(['--input-type=module', '--eval', 'import {execFileSync} from "node:child_process";process.stdout.write(execFileSync("git-bug", ["bug"], {cwd: process.cwd(), env: process.env}).toString())'], { cwd: repo, env: TEST_ENV })

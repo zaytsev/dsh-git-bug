@@ -355,7 +355,17 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
     identities: [{ id: 'u1', humanId: 'u1', name: 'Agent', login: '' }],
     counts: { open: 1, closed: 0, total: 1 },
     issues: [],
-    taskLabel: 'agent-task',
+    taskLabel: 'ai',
+    labelVocabulary: {
+      kinds: ['bug', 'feature'],
+      priorities: ['priority:low', 'priority:high'],
+      severities: ['severity:minor'],
+      states: ['blocked'],
+      ownership: 'ai',
+      componentPrefix: 'component:',
+      suggestions: ['bug', 'feature', 'priority:high', 'ai'],
+    },
+    labelsInUse: ['legacy-thing', 'bug'],
     availability: { available: true, version: 'v0.11.0' },
   }
   const summary = {
@@ -402,8 +412,9 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   const overlay = registrations.find(entry => entry.options.name === 'shell.overlay')
   const face = overlay.options.inject()
   const panelProps = { useVisibility: () => true, hide: face.hide, loadOverview: face.loadOverview }
-  const tree = await driver.mount(overlay.component, panelProps)
-
+  let tree
+  try {
+    tree = await driver.mount(overlay.component, panelProps)
   const rendered = textOf(tree)
   assert.match(rendered, /Git-Bug issues/)
   assert.match(rendered, /Render the issues panel/)
@@ -425,11 +436,36 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   closeButton.props.onClick()
   await driver.mount(overlay.component, panelProps)
   assert.ok(calls.some(call => call.url.endsWith('/status') && call.method === 'POST'))
+  // The create form offers the vocabulary as chips, and the shared datalist backs
+  // every label input — one source for the panel and the prompt.
+  const openForm = buttonByText(settled, 'New issue')
+  assert.ok(openForm !== null, 'the create-form toggle is present')
+  openForm.props.onClick()
+  const withForm = await driver.mount(overlay.component, panelProps)
+  const chip = buttonByText(withForm, 'priority:high')
+  assert.ok(chip !== null, 'a suggested label renders as a chip')
+  const options = []
+  const collectOptions = (node) => {
+    if (node === null || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(collectOptions); return }
+    if (node.type === 'option' && node.props?.value !== undefined) options.push(node.props.value)
+    collectOptions(node.children ?? node.props?.children ?? null)
+  }
+  collectOptions(withForm)
+  // Merge rule: configured suggestions first, then the repository's own labels,
+  // de-duplicated — the panel never hardcodes a label list of its own.
+  const expectedOptions = [...new Set([...overview.labelVocabulary.suggestions, ...overview.labelsInUse])]
+  assert.deepEqual([...new Set(options)], expectedOptions)
+
   // The overview the panel renders is the same read that publishes the sidebar count.
   assert.equal(face.hooks.openCount.getSnapshot(), 1)
   face.hide()
   assert.equal(face.hooks.visibility.getSnapshot(), false)
-  for (const effect of effects) effect.dispose()
+  } finally {
+    // The count poll owns an interval: a failing assertion must not keep the
+    // test runner alive.
+    for (const effect of effects) effect.dispose()
+  }
 })
 
 test('the overlay renders nothing while closed', { skip: realReact === null ? 'no react install found' : false }, async () => {
