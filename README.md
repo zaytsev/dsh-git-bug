@@ -144,6 +144,8 @@ Config is read from the row, e.g.:
 | `autoCreateIdentity` | `true` | Create that identity at activation instead of failing the first write. |
 | `promptSection` | `true` | Contribute the system-prompt section. |
 | `promptOrder` | `120` | Section order (tool guidance lives at 100–199). |
+| `sessionCue` | `true` | Inject the task-list cue (with live counts when they are already read) at `agent/session-start`. |
+| `todoNudge` | `true` | Inject one reminder per session, the first time that session calls `todo_write`. |
 | `timeoutMs` | `30000` | Deadline for local git-bug commands. |
 | `syncTimeoutMs` | `120000` | Deadline for push/pull. |
 
@@ -177,8 +179,25 @@ byte-for-byte, so state rendered into the system prompt rewrites it in place —
 cached prefix of that request *and every request after it*, including the whole conversation
 history. Rendering volatile state last does not help: what follows the change is the history.
 
+The section carries two rules, and both are written to be checkable rather than aspirational: the
+first tool call in any task that takes more than one step is `git_bug_list`; `todo_write` is a
+private step list inside a single turn, and anything that must outlive the turn, be visible in the
+panel, or be shared goes to git-bug instead.
+
 Live state therefore reaches the model the cache-safe way — through the tools, whose results append
 at the tail of the conversation:
+
+Two injected cues close the gap the static prompt leaves:
+
+- **At `agent/session-start`** the plugin injects one user-role message with the rule and, when the
+  repository has already been read, the live counts ("3 open · 1 labelled agent-task"). Injection is
+  synchronous — the first step claims its messages immediately — so a cold start falls back to the
+  rule without numbers and the read that fills them runs in the background for the next session.
+- **On the first `todo_write` of a session** it injects one reminder that points at git-bug. Asked
+  once per session, after the tool result, with the decision passed through untouched.
+
+Both append at the tail, so neither can move the cached prefix; both are switchable (`sessionCue`,
+`todoNudge`) for deployments that want the prompt alone.
 
 - `git_bug_list` is how the model sees the task list, and the section says so;
 - a turn that creates, comments on, or closes issues leaves the cached prefix intact, because the

@@ -129,6 +129,90 @@ test('tool failures explain how to recover', async () => {
   await byName.get('git_bug_create').execute({ title: 'now writes work' }, {})
 })
 
+test('seeds the session with the live counts and the read-first rule', async () => {
+  const repoPath = await makeRepo()
+  const fake = await activate(repoPath)
+  const create = fake.tools.find(tool => tool.name === 'git_bug_create')
+  await create.execute({ title: 'Existing task', labels: ['agent-task'] }, {})
+
+  assert.ok(fake.events().includes('agent/session-start'))
+  const injected = []
+  const agent = { inject: message => injected.push(message) }
+  await fake.emit('agent/session-start', { agent })
+
+  // Synthesised, not read: injection must be synchronous so it lands in the
+  // session's first request, where the counts may not have been read yet.
+  const [message] = injected
+  assert.equal(message.role, 'user')
+  assert.equal(message.source.kind, 'plugin')
+  assert.equal(message.source.plugin, 'dsh-git-bug')
+  assert.equal(typeof message.id, 'string')
+  assert.match(message.content[0].text, /git-bug task list/)
+  assert.match(message.content[0].text, /git_bug_list/)
+  assert.ok(message.content[0].text.includes(repoPath))
+
+  // A later session gets the live counts, filled in by the background read.
+  for (let attempt = 0; attempt < 60 && !/open ·/.test(injected.at(-1).content[0].text); attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50))
+    await fake.emit('agent/session-start', { agent })
+  }
+  const withCounts = injected.at(-1).content[0].text
+  assert.match(withCounts, /1 open/)
+  assert.match(withCounts, /1 labelled `agent-task`/)
+})
+
+test('the session cue reports an empty list as a starting point', async () => {
+  const repoPath = await makeRepo()
+  const fake = await activate(repoPath)
+  const injected = []
+  const agent = { inject: message => injected.push(message) }
+  await fake.emit('agent/session-start', { agent })
+  // Cold start may synthesise the rule before the first read lands; wait for the
+  // counts variant rather than assuming one.
+  for (let attempt = 0; attempt < 60 && !/empty right now|open ·/.test(injected.at(-1).content[0].text); attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50))
+    await fake.emit('agent/session-start', { agent })
+  }
+  const text = injected.at(-1).content[0].text
+  assert.match(text, /empty right now/)
+  assert.match(text, /git_bug_list/)
+  assert.match(text, /git_bug_create/)
+})
+
+test('nudges once per session when the model reaches for todo_write', async () => {
+  const repoPath = await makeRepo()
+  const fake = await activate(repoPath)
+  assert.ok(fake.events().includes('tools/post-execute'))
+
+  const injected = []
+  const agent = { inject: message => injected.push(message) }
+  const next = async () => ({ kind: 'accept' })
+
+  // Another tool, then the same agent twice: exactly one nudge, and the
+  // decision always passes through untouched.
+  assert.deepEqual(await fake.emit('tools/post-execute', { name: 'read', agent }, {}, next), undefined)
+  await fake.emit('tools/post-execute', { name: 'todo_write', agent }, {}, next)
+  await fake.emit('tools/post-execute', { name: 'todo_write', agent }, {}, next)
+  assert.equal(injected.length, 1)
+  assert.equal(injected[0].source.plugin, 'dsh-git-bug')
+  assert.match(injected[0].content[0].text, /todo_write/)
+  assert.match(injected[0].content[0].text, /git-bug/)
+
+  // A different session gets its own single nudge.
+  const other = []
+  await fake.emit('tools/post-execute', { name: 'todo_write', agent: { inject: m => other.push(m) } }, {}, next)
+  assert.equal(other.length, 1)
+})
+
+test('the cues are opt-out and the prompt stays literal', async () => {
+  const repoPath = await makeRepo()
+  const fake = await activate(repoPath, { config: { sessionCue: false, todoNudge: false } })
+  assert.deepEqual(fake.events(), [])
+  assert.equal(typeof fake.sections[0].text, 'string')
+  assert.match(fake.sections[0].text, /first tool call/)
+  assert.match(fake.sections[0].text, /private step list inside a single turn/)
+})
+
 test('a non-repository path is reported instead of written to', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-git-bug-plugin-'))
   const fake = await activate(dir)

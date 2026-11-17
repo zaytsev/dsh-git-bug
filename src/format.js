@@ -75,3 +75,13 @@ export function formatIssueDetail(issue) {
   }
   return lines.join('\n')
 }
+
+/**
+ * Count the open issues carrying one label.
+ * @param issues - normalized summaries.
+ * @param label - the label to look for.
+ * @returns the number of open issues carrying it.
+ */
+export function countLabel(issues, label) {
+  return issues.filter(issue => issue.status === 'open' && issue.labels.includes(label)).length
+}

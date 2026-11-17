@@ -42,16 +42,17 @@ export function instructionText(config) {
     '',
     'How to use it:',
     '',
-    `1. Read the list with \`git_bug_list\` before planning multi-step work — this prompt does not ` +
-      `carry the issue list, so that call is how you see what already exists. Never create an ` +
+    `1. **Your first tool call in any task that will take more than one step is \`git_bug_list\`.** ` +
+      `Not a later step, not "when needed": before you plan, before you touch a file. The list is ` +
+      `the workspace's shared task record, and this prompt does not carry it. Never create an ` +
       `issue that already exists; update it instead.`,
     `2. Create one issue per unit of work with \`git_bug_create\` and the label ` +
       `\`${config.taskLabel}\` before you start it. Keep it current as you go: ` +
       `\`git_bug_comment\` for progress, decisions, and blockers, ` +
       `\`git_bug_status\` closed the moment the work is genuinely done.`,
-    `3. Prefer issues over \`todo_write\` when the plan must outlive this session, be visible to ` +
-      `the user in the Issues panel, or be shared with other sessions and people. ` +
-      `\`todo_write\` stays right for a private step list inside one turn.`,
+    `3. \`todo_write\` is a different thing: a private step list inside a single turn — invisible ` +
+      `to the user, gone with the session. Anything that must outlive the turn, be visible in the ` +
+      `Issues panel, or be shared goes to git-bug instead.`,
     '4. The user sees and edits the same issues in the Issues panel: treat issue text as shared '
       + 'state, not as scratch space, and never rewrite an issue title or body that someone else wrote.',
     `5. \`git_bug_sync\` with action \`pull\` refreshes from the git remote and ` +

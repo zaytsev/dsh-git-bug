@@ -160,8 +160,24 @@ export function fakeContext(options = {}) {
       }
     },
   }
+  /** Event listeners registered through `ctx.on`, keyed by event name. */
+  const listeners = new Map()
   const ctx = {
     subprocess,
+    /**
+     * Record one event listener, as Cordis does.
+     * @param event - event name.
+     * @param listener - the listener.
+     * @returns the unsubscriber.
+     */
+    on(event, listener) {
+      const set = listeners.get(event) ?? new Set()
+      set.add(listener)
+      listeners.set(event, set)
+      const dispose = () => { set.delete(listener) }
+      disposers.push(dispose)
+      return dispose
+    },
     tools: {
       /**
        * Record one tool registration.
@@ -222,5 +238,23 @@ export function fakeContext(options = {}) {
     },
     logger: { warn() {}, error() {}, info() {} },
   }
-  return { ctx, tools, sections, routes, disposers, webServer }
+  return {
+    ctx,
+    tools,
+    sections,
+    routes,
+    disposers,
+    webServer,
+    /** Every event name a listener was registered for. */
+    events: () => [...listeners.keys()],
+    /**
+     * Dispatch one event to its recorded listeners.
+     * @param event - event name.
+     * @param args - listener arguments.
+     * @returns nothing; listeners run in registration order.
+     */
+    async emit(event, ...args) {
+      for (const listener of listeners.get(event) ?? []) await listener(...args)
+    },
+  }
 }

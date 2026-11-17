@@ -136,6 +136,15 @@ test('the assembled prompt is byte-stable across a turn that writes to git-bug',
     assert.doesNotMatch(system, /Open issues/)
     assert.doesNotMatch(system, /\d+ open/)
 
+    // The session-start cue rides an injected user message, so it reaches the model
+    // without touching the prefix above.
+    const userText = first.messages
+      .filter(message => message.role === 'user')
+      .map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content))
+      .join('\n')
+    assert.match(userText, /git-bug task list/, 'the session-start cue reaches the model')
+    assert.match(userText, /Call `git_bug_list` before you plan/)
+
     const toolNames = first.tools.map(tool => tool.function.name)
     for (const name of ['git_bug_list', 'git_bug_show', 'git_bug_create', 'git_bug_comment', 'git_bug_status', 'git_bug_label', 'git_bug_sync', 'git_bug_identity']) {
       assert.ok(toolNames.includes(name), `the request must offer ${name}`)

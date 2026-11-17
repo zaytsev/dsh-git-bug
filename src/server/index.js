@@ -27,6 +27,7 @@ import { resolve } from 'node:path'
 import { createGitBug } from '../git-bug.js'
 import { createAvailabilityProbe, createSubprocessRunner } from '../subprocess-runner.js'
 import { createApiHandler } from './api.js'
+import { contextMessage, genericCue, sessionCue, todoNudge } from './cue.js'
 import { instructionText, SECTION_NAME } from './prompt.js'
 import { registerTools } from './tools.js'
 
@@ -93,6 +94,8 @@ export function normalizeConfig(raw) {
     autoCreateIdentity: input.autoCreateIdentity === undefined ? true : input.autoCreateIdentity === true,
     promptSection: input.promptSection === undefined ? true : input.promptSection === true,
     promptOrder,
+    sessionCue: input.sessionCue === undefined ? true : input.sessionCue === true,
+    todoNudge: input.todoNudge === undefined ? true : input.todoNudge === true,
     timeoutMs: positiveNumber(input.timeoutMs, 'timeoutMs', 30_000),
     syncTimeoutMs: positiveNumber(input.syncTimeoutMs, 'syncTimeoutMs', 120_000),
   }
@@ -132,6 +135,55 @@ export function apply(ctx, rawConfig) {
       name: SECTION_NAME,
       order: config.promptOrder,
       text: instructionText(config),
+    })
+  }
+
+  if (config.sessionCue) {
+    // Seeding context at session start puts the rule, and the counts when they
+    // are already known, in front of the model without touching the prompt: an
+    // injected message appends at the tail, so the cached prefix stays
+    // byte-stable. Injection is synchronous because the session's first step
+    // claims its messages immediately; the read that feeds later sessions runs
+    // in the background.
+    let latest = null
+    const refresh = () => {
+      repo.overview().then((overview) => { latest = overview }).catch(() => {
+        // A cue is an optimization. A repository that cannot be read reports
+        // itself through the tools and the panel.
+      })
+    }
+    refresh()
+    ctx.on('agent/session-start', (payload) => {
+      const agent = payload?.agent
+      if (agent === undefined) return
+      const text = latest === null
+        ? genericCue(config.repoPath, config.taskLabel)
+        : sessionCue(latest, config.taskLabel, config.repoPath)
+      try {
+        agent.inject(contextMessage(name, text))
+      } catch {
+        // Advisory only: a rejected injection must not fail the session.
+      }
+      refresh()
+    })
+  }
+
+  if (config.todoNudge) {
+    // Nudge once per session, at the moment the model reaches for the other
+    // task list. The result is passed through untouched.
+    const nudged = new WeakSet()
+    ctx.on('tools/post-execute', async (exec, _result, next) => {
+      const decision = await next()
+      if (exec?.name !== 'todo_write') return decision
+      const agent = exec.agent
+      if (agent === undefined || nudged.has(agent)) return decision
+      nudged.add(agent)
+      try {
+        agent.inject(contextMessage(name, todoNudge(config.repoPath)))
+      } catch {
+        // The nudge is advisory; a rejected injection must not fail the tool.
+      }
+      return decision
     })
   }
 
