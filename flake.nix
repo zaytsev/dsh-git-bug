@@ -1,11 +1,7 @@
 {
   description = "dsh-git-bug — a DeepSeek Harness plugin that manages git-bug issues in the current workspace";
 
-  inputs = {
-    # Development and build inputs follow nixpkgs unstable; flake.lock pins the
-    # exact revision this repository was last verified against.
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  };
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = {
     self,
@@ -19,14 +15,15 @@
     ];
     eachSystem = nixpkgs.lib.genAttrs systems;
 
-    # One definition of the installed plugin tree: manifest, server half, built
-    # browser half, and the loader patch. Both `packages` and the overlay call
-    # this, so the overlay can never drift from the flake's own package, and it
-    # takes the consumer's `pkgs` so overrides there are honored.
-    mkPlugin = pkgs:
+    # The package manifest is the only source of the package's own identity.
+    manifest = nixpkgs.lib.importJSON (self + "/package.json");
+    name = manifest.name;
+    version = manifest.version;
+
+    mkPackage = pkgs:
       pkgs.stdenvNoCC.mkDerivation {
-        pname = "dsh-git-bug";
-        version = "0.1.0";
+        pname = name;
+        inherit version;
         src = self;
         nativeBuildInputs = [pkgs.nodejs_24];
         buildPhase = ''
@@ -39,12 +36,38 @@
         '';
       };
 
+    # One entry of pkgs.dshPlugins, in the shape programs.deepseek-harness
+    # (settings.plugins) consumes — the shape pkgs/deepseek/plugins/dsh-utils.nix
+    # builds.
+    mkPlugin = pkgs: let
+      staged = pkgs.runCommand "dsh-plugin-${name}" {} ''
+        mkdir -p "$out/node_modules/${name}"
+        cp -r --no-preserve=ownership ${mkPackage pkgs}/. "$out/node_modules/${name}/"
+        cat > "$out/entry.mjs" <<EOF
+        import * as mod from "${name}"
+        export * from "${name}"
+        export default mod.default ?? mod
+        EOF
+      '';
+    in {
+      __functor = spec: extra: spec // {config = spec.config // extra;};
+      id = name;
+      inherit name version;
+      config = {};
+      bundle = false;
+      # Names the row after the package, so the host serves the browser half.
+      client = true;
+      package = staged;
+      entry = "${staged}/entry.mjs";
+      packageName = name;
+      packageDir = "${staged}/node_modules/${name}";
+      patch = null;
+    };
+
     perSystem = system: let
       pkgs = nixpkgs.legacyPackages.${system};
-      plugin = mkPlugin pkgs;
+      package = mkPackage pkgs;
     in {
-      # Everything the plugin build, its tests, and the runtime integration
-      # checks need. `git-bug` is the executable the plugin itself drives.
       devShells.default = pkgs.mkShell {
         packages = with pkgs; [
           nodejs_24
@@ -60,33 +83,26 @@
         '';
       };
 
-      # Link it into a DSH module directory
-      # (`DSH_HOME/node_modules/dsh-git-bug`) to make the loader row resolvable.
-      packages.plugin = plugin;
-      packages.default = plugin;
+      packages.plugin = package;
+      packages.default = package;
 
-      # `nix run .#install` links the built plugin into the DSH module directory
-      # and prints the launch command.
       apps.install = {
         type = "app";
         program = toString (pkgs.writeShellScript "dsh-git-bug-install" ''
           set -eu
-          plugin=${plugin}
+          plugin=${package}
           home_dir=''${DSH_HOME:-$HOME/.config/dsh}
           target="$home_dir/node_modules"
           mkdir -p "$target"
           ln -sfn "$plugin" "$target/dsh-git-bug"
           echo "linked $plugin"
           echo "  -> $target/dsh-git-bug"
-          echo "launch with the row mounted:"
-          echo "  dsh --profile web --patch $plugin/cordis.patch.yml"
         '');
       };
 
-      # `nix flake check` runs the plugin test suite in a hermetic HOME.
       checks.default = pkgs.stdenvNoCC.mkDerivation {
-        pname = "dsh-git-bug-check";
-        version = "0.1.0";
+        pname = "${name}-check";
+        inherit version;
         src = self;
         nativeBuildInputs = with pkgs; [
           nodejs_24
@@ -106,22 +122,9 @@
     apps = eachSystem (system: (perSystem system).apps);
     checks = eachSystem (system: (perSystem system).checks);
 
-    # The plugin set on its own, for flakes that would rather read an output
-    # than instantiate an overlay: `inputs.dsh-git-bug.dshPlugins.${system}.dsh-git-bug`.
-    dshPlugins = eachSystem (system: {
-      dsh-git-bug = mkPlugin nixpkgs.legacyPackages.${system};
-    });
-
-    # Overlay adding the set to a consumer's nixpkgs:
-    #
-    #   nixpkgs.overlays = [ inputs.dsh-git-bug.overlays.default ];
-    #   # then: pkgs.dshPlugins.dsh-git-bug
-    #
-    # The merge keeps whatever another overlay already put in `dshPlugins`, so
-    # several plugin flakes compose instead of replacing each other.
     overlays.default = final: prev: {
       dshPlugins = (prev.dshPlugins or {}) // {
-        dsh-git-bug = mkPlugin final;
+        ${name} = mkPlugin final;
       };
     };
   };

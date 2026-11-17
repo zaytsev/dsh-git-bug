@@ -37,32 +37,57 @@ nix build .#plugin         # the installable plugin tree
 nix run .#install          # links it into ${DSH_HOME:-~/.config/dsh}/node_modules/dsh-git-bug
 ```
 
-Or take it as an overlay, which puts the plugin in `pkgs.dshPlugins`:
+Once this directory is a git repository, Nix only sees **tracked** files: with the tree untracked,
+`nix develop` fails with "is not tracked by Git" and `nix build` would ship an empty package. Run
+`git add -A` (and commit) first, or the flake will not see the package sources.
+
+### With the deepseek-harness Home Manager module
+
+The overlay publishes the plugin in the shape that module's `settings.plugins` consumes — the same
+shape `pkgs/deepseek/plugins/dsh-utils.nix` builds: an entry carrying `id`, `entry`, `client`,
+`packageName`, `packageDir` and `config`, callable with a config through `__functor`.
 
 ```nix
 {
-  inputs.dsh-git-bug.url = "github:you/dsh-git-bug";   # or path:/path/to/dsh-git-bug
+  inputs.dsh-git-bug.url = "github:you/dsh-git-bug";
 
   # wherever your nixpkgs is instantiated
   nixpkgs.overlays = [ inputs.dsh-git-bug.overlays.default ];
 }
 ```
 
-Then `pkgs.dshPlugins.dsh-git-bug` is the same derivation as this flake's `packages.<system>.plugin`,
-e.g. for a home-manager install:
-
 ```nix
-home.file.".config/dsh/node_modules/dsh-git-bug".source = pkgs.dshPlugins.dsh-git-bug;
+programs.deepseek-harness = {
+  enable = true;
+  settings.plugins = [
+    # bare, with the plugin's defaults:
+    pkgs.dshPlugins.dsh-git-bug
+    # …or bind the row config (any subset of the table above) instead:
+    # (pkgs.dshPlugins.dsh-git-bug {repoPath = "/home/me/projects/thing";})
+  ];
+};
 ```
 
-The overlay merges into an existing `dshPlugins` set rather than replacing it, so several plugin
-flakes compose. The set is also exported directly as
-`inputs.dsh-git-bug.dshPlugins.${system}.dsh-git-bug` for consumers that would rather read an output
-than instantiate an overlay.
+The module then generates the loader row (`{id = "dsh-git-bug"; name = "dsh-git-bug"; config = …;}`)
+into the `--patch` layer it passes to the launcher, and links `packageDir` into
+`$DSH_HOME/node_modules/dsh-git-bug` — the anchor both the loader import and the host's
+client-module scan resolve the row name through. Nothing is written into `$DSH_HOME` for this plugin
+beyond that link.
 
-Once this directory is a git repository, Nix only sees **tracked** files: with the tree untracked,
-`nix develop` fails with "is not tracked by Git" and `nix build` would ship an empty package. Run
-`git add -A` (and commit) first, or the flake will not see the package sources.
+Why the entry looks like that, if you are comparing it with `dsh-utils.nix`:
+
+| field | value here | why |
+|---|---|---|
+| `id` | `dsh-git-bug` | row id; also the id a disable patch targets |
+| `client` | `true` | the package declares `dsh.client`, so the module names the row after the **package**, not the generated entry. An absolute entry path makes the browser half invisible to the host's client-module scan |
+| `entry` | `<staged>/entry.mjs` | a three-line re-export of the package by name, sitting beside a `node_modules` tree so that import resolves |
+| `packageDir` | `<staged>/node_modules/dsh-git-bug` | what the module links into `$DSH_HOME/node_modules` |
+| `config` | `{}` | defaults; merge your own with `(pkgs.dshPlugins.dsh-git-bug { repoPath = …; })` |
+| `patch` | `null` | not a bundle: the module generates the row instead of mounting a layer |
+
+`packages.<system>.plugin` stays the plain package tree, which is what `nix run .#install` symlinks.
+The module-shaped entry exists only through the overlay: a custom top-level flake output would make
+`nix flake check` warn about an unknown output.
 
 ### With any package manager
 
