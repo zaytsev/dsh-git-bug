@@ -48,6 +48,14 @@ test('locale dictionaries share one key set and stay in their own language', () 
   assert.notEqual(zh.search, en.search, 'the filter placeholder is translated')
 })
 
+test('labels stay on one line and the label cloud never scrolls', () => {
+  const css = read('src/client/styles.css')
+  assert.match(css, /\.gb-label\{[^}]*white-space:nowrap/, 'label text never breaks')
+  assert.match(css, /\.gb-chip\{[^}]*white-space:nowrap/, 'chip text never breaks')
+  assert.match(css, /\.gb-labels\{[^}]*flex-wrap:wrap/, 'the label group wraps between labels')
+  assert.doesNotMatch(css, /\.gb-cloud\{[^}]*overflow:auto/, 'the cloud shows every label')
+})
+
 test('the build is deterministic and self-contained', () => {
   const before = read('lib/client.js')
   execFileSync(process.execPath, [join(ROOT, 'scripts/build-client.mjs')], { cwd: ROOT })

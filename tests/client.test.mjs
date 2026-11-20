@@ -515,6 +515,7 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   assert.match(rendered, /aaaaaaa/)
   assert.ok(calls.some(call => call.url.endsWith('/overview')))
   assert.ok(calls.some(call => call.url.includes('/issues?status=open')))
+  assert.ok(find(tree, node => node.props?.className === 'gb-labels') !== null, 'issue labels render in a wrapping group')
 
   const row = buttonByText(tree, 'Render the issues panel')
   assert.ok(row !== null, 'the issue row must be a button')

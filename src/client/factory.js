@@ -123,7 +123,7 @@
 						h("span", null, issue.humanId),
 						h("span", null, stamp(issue.editedAt)),
 						comments,
-						labels.length > 0 ? h("span", { style: { display: "inline-flex", gap: "4px" } }, labels) : null
+						labels.length > 0 ? h("span", { className: "gb-labels" }, labels) : null
 					)
 				)
 			)
@@ -155,7 +155,7 @@
 						h("span", null, detail.status === "closed" ? t("closed") : t("open")),
 						h("span", null, t("author") + ": " + (detail.author == null ? "?" : detail.author.name)),
 						h("span", null, t("updated") + ": " + stamp(detail.editedAt)),
-						labels.length > 0 ? h("span", { style: { display: "inline-flex", gap: "4px" } }, labels) : null
+						labels.length > 0 ? h("span", { className: "gb-labels" }, labels) : null
 					),
 					h("div", { style: { display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" } },
 						h("button", {
