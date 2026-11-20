@@ -10,21 +10,23 @@
 import { countLabel } from '../format.js'
 
 /**
- * Build one plugin-sourced user message.
+ * Build one producer-sourced user message.
  *
- * The shape is the harness's {@link UserMessage}: an identity, the user role, a
- * text block, and a plugin source. The session freezes and logs it, so it is
- * replayable like any other model-visible input.
- * @param plugin - plugin name recorded on the source.
+ * Session format V4 retires the catch-all `kind: 'plugin'` source: every
+ * producer owns a stable kind. The V3→V4 migration names an unknown plugin
+ * `plugin:<name>`, so using that same kind here keeps historical cues and new
+ * cues identical to consumers. The session freezes and logs the message, so it
+ * is replayable like any other model-visible input.
+ * @param producer - plugin name recorded as the producer kind.
  * @param text - the cue.
  * @returns the message to inject.
  */
-export function contextMessage(plugin, text) {
+export function contextMessage(producer, text) {
   return {
     id: crypto.randomUUID(),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin },
+    source: { kind: 'plugin:' + producer },
   }
 }
 

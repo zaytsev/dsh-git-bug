@@ -213,7 +213,9 @@ Two injected cues close the gap the static prompt leaves:
   once per session, after the tool result, with the decision passed through untouched.
 
 Both append at the tail, so neither can move the cached prefix; both are switchable (`sessionCue`,
-`todoNudge`) for deployments that want the prompt alone.
+`todoNudge`) for deployments that want the prompt alone. Each records
+`source.kind: 'plugin:dsh-git-bug'` — the V4 producer-owned kind, matching what the V3→V4 migration
+assigns to this plugin — rather than the retired catch-all `plugin`.
 
 - `git_bug_list` is how the model sees the task list, and the section says so;
 - a turn that creates, comments on, or closes issues leaves the cached prefix intact, because the

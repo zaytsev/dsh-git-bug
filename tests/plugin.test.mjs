@@ -150,8 +150,8 @@ test('seeds the session with the live counts and the read-first rule', async () 
   // session's first request, where the counts may not have been read yet.
   const [message] = injected
   assert.equal(message.role, 'user')
-  assert.equal(message.source.kind, 'plugin')
-  assert.equal(message.source.plugin, 'dsh-git-bug')
+  // Session V4 requires a producer-owned kind; `plugin` alone is retired.
+  assert.deepEqual(message.source, { kind: 'plugin:dsh-git-bug' })
   assert.equal(typeof message.id, 'string')
   assert.match(message.content[0].text, /git-bug task list/)
   assert.match(message.content[0].text, /git_bug_list/)
@@ -202,7 +202,8 @@ test('nudges once per session when the model reaches for todo_write', async () =
   await fake.emit('tools/post-execute', { name: 'todo_write', agent }, {}, next)
   await fake.emit('tools/post-execute', { name: 'todo_write', agent }, {}, next)
   assert.equal(injected.length, 1)
-  assert.equal(injected[0].source.plugin, 'dsh-git-bug')
+  assert.equal(injected[0].source.kind, 'plugin:dsh-git-bug')
+  assert.equal(injected[0].source.plugin, undefined)
   assert.match(injected[0].content[0].text, /todo_write/)
   assert.match(injected[0].content[0].text, /git-bug/)
 
