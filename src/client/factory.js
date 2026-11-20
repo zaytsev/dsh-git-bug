@@ -23,114 +23,21 @@
 		/** Matches fetched in one request; paging happens over this set, client side. */
 		const PAGE_LIMIT = 200
 
-		const STRINGS = {
-			zh: {
-				issues: "议题",
-				openCountTitle: "进行中的议题数",
-				title: "Git-Bug 议题",
-				refresh: "刷新",
-				pull: "拉取",
-				push: "推送",
-				sync: "同步",
-				close: "关闭",
-				open: "进行中",
-				closed: "已关闭",
-				all: "全部",
-				search: "按 git-bug 语法筛选，例如 label:ui",
-				advanced: "高级",
-				sort: "排序",
-				edited: "编辑时间",
-				created: "创建时间",
-				id: "编号",
-				newest: "最新优先",
-				oldest: "最旧优先",
-				pageOf: "{n} / {total}",
-				previousPage: "上一页",
-				nextPage: "下一页",
-				matches: "{n} 条匹配",
-				noLabels: "还没有标签",
-				noIssues: "没有匹配的议题",
-				pickIssue: "选择左侧议题查看详情",
-				newIssue: "新建议题",
-				cancel: "取消",
-				create: "创建",
-				issueTitle: "标题",
-				issueBody: "描述（计划、验收标准）",
-				issueLabels: "标签，用逗号分隔",
-				addComment: "添加评论",
-				commentPlaceholder: "进度、决定、阻塞…",
-				reopen: "重新打开",
-				markClosed: "标记完成",
-				syncDone: "同步完成",
-				identity: "身份",
-				noIdentity: "尚未创建身份",
-				loading: "正在读取议题…",
-				commentCount: "{n} 条评论",
-				unavailable: "git-bug 不可用",
-				firstWrite: "首次写入会创建身份",
-				labels: "标签",
-				author: "作者",
-				updated: "更新",
-				comments: "评论",
-			},
-			en: {
-				issues: "Issues",
-				openCountTitle: "Open issues",
-				title: "Git-Bug issues",
-				refresh: "Refresh",
-				pull: "Pull",
-				push: "Push",
-				sync: "Sync",
-				close: "Close",
-				open: "Open",
-				closed: "Closed",
-				all: "All",
-				search: "Filter with git-bug syntax, e.g. label:ui",
-				advanced: "Advanced",
-				sort: "Sort",
-				edited: "Edited",
-				created: "Created",
-				id: "Id",
-				newest: "Newest first",
-				oldest: "Oldest first",
-				pageOf: "{n} / {total}",
-				previousPage: "Previous page",
-				nextPage: "Next page",
-				matches: "{n} matching",
-				noLabels: "No labels yet",
-				noIssues: "No issues match",
-				pickIssue: "Select an issue to read it",
-				newIssue: "New issue",
-				cancel: "Cancel",
-				create: "Create",
-				issueTitle: "Title",
-				issueBody: "Body (plan, acceptance criteria)",
-				issueLabels: "Labels, comma separated",
-				addComment: "Add comment",
-				commentPlaceholder: "Progress, decisions, blockers…",
-				reopen: "Reopen",
-				markClosed: "Mark done",
-				syncDone: "Sync finished",
-				identity: "Identity",
-				noIdentity: "No identity yet",
-				loading: "Reading issues…",
-				commentCount: "{n} comments",
-				unavailable: "git-bug is unavailable",
-				firstWrite: "the first write creates one",
-				labels: "Labels",
-				author: "Author",
-				updated: "Updated",
-				comments: "Comments",
-			},
+		/** Locale namespace this panel registers with the shell's locale service. */
+		const LOCALE_NAMESPACE = "dsh-git-bug"
+
+		/** Substitute {name} placeholders in one locale template. */
+		function interpolate(template, values) {
+			if (values === undefined) return template
+			return template.replace(/\{(\w+)\}/g, (match, name) => (values[name] === undefined ? match : String(values[name])))
 		}
 
-		const LANG = typeof navigator !== "undefined" && /^zh/i.test(navigator.language ?? "") ? "zh" : "en"
+		/** English fallback until apply() binds the shell's active-locale translator. */
+		let boundT = (key, values) => interpolate(LOCALES.en[key] ?? key, values)
 
+		/** Translate one caption; the wrapper keeps the late locale binding visible to components. */
 		function t(key, values) {
-			const table = STRINGS[LANG]
-			const raw = table[key] ?? STRINGS.en[key] ?? key
-			if (values === undefined) return raw
-			return raw.replace(/\{(\w+)\}/g, (match, name) => (values[name] === undefined ? match : String(values[name])))
+			return boundT(key, values)
 		}
 
 		/** Call the plugin API and unwrap its JSON, or throw the server's message. */
@@ -649,6 +556,11 @@
 			document.head.appendChild(style)
 			ctx.effect(() => () => { style.remove() }, "dsh-git-bug: styles")
 
+			// The shell owns language selection; the panel only registers its two
+			// dictionaries and asks the service for the active one.
+			ctx.effect(() => ctx.locale.register(LOCALE_NAMESPACE, { en: LOCALES.en, zh: LOCALES.zh }), "dsh-git-bug: dictionaries")
+			boundT = ctx.locale.bind(LOCALE_NAMESPACE)
+
 			const visibility = createVisibility()
 			// The open-issue count is a registrant-private reactive fact: the panel and the
 			// sidebar badge read it through hooks, and this closure is the only writer.
@@ -687,6 +599,7 @@
 				name: "sidebar.footer.action",
 				id: "git-bug",
 				order: 18,
+				locale: LOCALE_NAMESPACE,
 				inject: injected,
 			}, FooterAction))
 
@@ -694,12 +607,13 @@
 				name: "shell.overlay",
 				id: "git-bug",
 				order: 18,
+				locale: LOCALE_NAMESPACE,
 				inject: injected,
 			}, Overlay))
 		}
 
-		const inject = ["slots"]
+		const inject = ["slots", "locale"]
 
 		exports.apply = apply
 		exports.inject = inject
-		exports.__internals = { STRINGS, LANG, t, createVisibility, api, stamp, MarkdownBody }
+		exports.__internals = { LOCALES, LOCALE_NAMESPACE, t, createVisibility, api, stamp, MarkdownBody }

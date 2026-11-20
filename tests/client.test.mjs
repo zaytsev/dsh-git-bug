@@ -7,6 +7,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 const SOURCE = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+const ZH = JSON.parse(readFileSync(new URL('../src/client/locales/zh.json', import.meta.url), 'utf8'))
 
 /** Candidate node_modules roots holding a real React install. */
 function reactRoots() {
@@ -81,10 +82,57 @@ function loadBundle(reactModule, primitives) {
   return { id: handoff.id, exports, sandbox }
 }
 
+/**
+ * Minimal stand-in for the shell's locale service: dictionaries, a bound
+ * translator over the active language, and a switch that notifies subscribers.
+ * It mirrors the contract the panel uses; the real service lives in
+ * `@deepseek-ai/dsh-client-locale`.
+ */
+function fakeLocale() {
+  const dictionaries = new Map()
+  const listeners = new Set()
+  let active = 'en'
+  let revision = 0
+  const lookup = (ns, key) => {
+    const dicts = dictionaries.get(ns) ?? {}
+    for (const id of active === 'zh' ? ['zh', 'en'] : ['en']) {
+      if (dicts[id]?.[key] !== undefined) return dicts[id][key]
+    }
+    return undefined
+  }
+  return {
+    register(ns, dicts) {
+      dictionaries.set(ns, dicts)
+      revision += 1
+      return () => {}
+    },
+    bind(ns) {
+      return (key, values) => {
+        const template = lookup(ns, key) ?? key
+        if (values === undefined) return template
+        return template.replace(/\{(\w+)\}/g, (match, name) => (values[name] === undefined ? match : String(values[name])))
+      }
+    },
+    getSnapshot() {
+      return { active, locales: [{ id: 'zh', label: 'Chinese', fallback: 'en' }, { id: 'en', label: 'English' }], revision }
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    setActive(id) {
+      active = id
+      revision += 1
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
 /** A slot registry + effect tracker shaped like the client plugin context. */
 function fakeClientContext() {
   const registrations = []
   const effects = []
+  const locale = fakeLocale()
   /** Dispose every tracked effect, newest first, so timers do not outlive the test. */
   const disposeAll = () => {
     while (effects.length > 0) {
@@ -96,7 +144,9 @@ function fakeClientContext() {
     registrations,
     effects,
     disposeAll,
+    locale,
     ctx: {
+      locale,
       effect(fn, label) {
         const dispose = fn()
         effects.push({ label, dispose })
@@ -251,17 +301,20 @@ test('the built bundle registers one loader id and exports a slot plugin', () =>
   const { id, exports } = loadBundle(stubReact)
   assert.equal(id, 'dsh-git-bug')
   assert.equal(typeof exports.apply, 'function')
-  assert.deepEqual([...exports.inject], ['slots'])
+  assert.deepEqual([...exports.inject], ['slots', 'locale'])
 })
 
 test('apply injects styles and registers the sidebar action and the overlay', () => {
   const { exports } = loadBundle(stubReact)
-  const { ctx, registrations, effects, disposeAll } = fakeClientContext()
+  const { ctx, locale, registrations, effects, disposeAll } = fakeClientContext()
   exports.apply(ctx)
 
   assert.deepEqual(registrations.map(entry => entry.options.name).sort(), ['shell.overlay', 'sidebar.footer.action'])
-  for (const entry of registrations) assert.equal(entry.options.id, 'git-bug')
-  assert.deepEqual(effects.map(effect => effect.label), ['dsh-git-bug: styles', 'dsh-git-bug: open issue count'])
+  for (const entry of registrations) {
+    assert.equal(entry.options.id, 'git-bug')
+    assert.equal(entry.options.locale, 'dsh-git-bug', 'the entry follows the shell locale seat')
+  }
+  assert.deepEqual(effects.map(effect => effect.label), ['dsh-git-bug: styles', 'dsh-git-bug: dictionaries', 'dsh-git-bug: open issue count'])
 
   const action = registrations.find(entry => entry.options.name === 'sidebar.footer.action')
   const face = action.options.inject()
@@ -272,7 +325,14 @@ test('apply injects styles and registers the sidebar action and the overlay', ()
   assert.equal(typeof face.hooks.openCount.getSnapshot, 'function')
   assert.equal(face.hooks.openCount.getSnapshot(), null, 'the count is unknown until the first read lands')
 
+  // The panel registers its dictionaries and reads the active language from the
+  // shell: a switch changes the copy, without a second language mixture.
   const hidden = exports.__internals
+  assert.equal(hidden.t('issues'), 'Issues')
+  locale.setActive('zh')
+  assert.equal(hidden.t('issues'), ZH.issues)
+  assert.equal(hidden.t('advanced'), ZH.advanced)
+  locale.setActive('en')
   assert.equal(hidden.t('issues'), 'Issues')
 
   disposeAll()
@@ -281,7 +341,7 @@ test('apply injects styles and registers the sidebar action and the overlay', ()
 
 test('the sidebar action right-aligns the open-issue count', () => {
   const { exports } = loadBundle(stubReact)
-  const { ctx, registrations, disposeAll } = fakeClientContext()
+  const { ctx, locale, registrations, disposeAll } = fakeClientContext()
   exports.apply(ctx)
   const action = registrations.find(entry => entry.options.name === 'sidebar.footer.action')
   const face = action.options.inject()
@@ -303,6 +363,13 @@ test('the sidebar action right-aligns the open-issue count', () => {
   const narrow = action.component({ wide: false, show: face.show, useOpenCount: () => 3 })
   assert.doesNotMatch(textOf(narrow), /Issues/)
   assert.equal(find(narrow, node => node.props?.className === 'gb-action-count'), null)
+
+  // The same component speaks the shell's active language.
+  locale.setActive('zh')
+  const chinese = textOf(action.component({ wide: true, show: face.show, useOpenCount: () => 3 }))
+  assert.ok(chinese.includes(ZH.issues), 'the sidebar label is translated')
+  assert.doesNotMatch(chinese, /Issues/)
+  locale.setActive('en')
 
   disposeAll()
 })
@@ -424,7 +491,9 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
 
   const registrations = []
   const effects = []
+  const locale = fakeLocale()
   const ctx = {
+    locale,
     effect(fn) { const dispose = fn(); effects.push({ dispose }); return dispose },
     slots: {
       inject(_name, callback) { return callback() },
@@ -604,6 +673,15 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   assert.match(textOf(pagerOf(thirdPage)), /3 \/ 3/)
   assert.equal(buttonByText(pagerOf(thirdPage), '›').props.disabled, true, 'and there is nowhere further to go')
 
+  // A locale switch changes the panel's copy in place: Chinese captions only,
+  // while issue text (data) is left exactly as the repository stores it.
+  locale.setActive('zh')
+  const localized = await driver.mount(overlay.component, panelProps)
+  assert.ok(textOf(localized).includes(ZH.issues), 'the panel title is translated')
+  assert.ok(textOf(localized).includes(ZH.advanced), 'panel captions are translated')
+  assert.doesNotMatch(textOf(localized), /Advanced/)
+  locale.setActive('en')
+
   // The overview the panel renders is the same read that publishes the sidebar count.
   assert.equal(face.hooks.openCount.getSnapshot(), 1)
   face.hide()
@@ -620,7 +698,9 @@ test('the overlay renders nothing while closed', { skip: realReact === null ? 'n
   const { exports } = loadBundle({ ...realReact, ...driver.hooks })
   const registrations = []
   const effects = []
+  const locale = fakeLocale()
   const ctx = {
+    locale,
     effect(fn) { const dispose = fn(); effects.push({ dispose }); return dispose },
     slots: { inject(_name, callback) { return callback() }, register(options, component) { registrations.push({ options, component }); return () => {} } },
   }

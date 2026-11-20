@@ -266,6 +266,20 @@ The server sorts and caps a request at 200 matches; the panel pages that ordered
 time, because git-bug's list command has no offset to page with. Issue text is Markdown, rendered by
 the shell, and one `Sync` button pulls and then pushes.
 
+### Languages
+
+The panel follows the shell's locale service, not `navigator.language`: the `dsh-client-locale`
+plugin owns the Settings → General → Language row, persists the choice, and publishes the active
+locale. The browser half declares `locale` in its client `inject` list, registers its dictionaries
+once (`ctx.locale.register('dsh-git-bug', { en, zh })`), binds `t`, and marks both slot entries
+`locale: 'dsh-git-bug'` so a language switch re-renders them.
+
+Copy lives in `src/client/locales/en.json` and `src/client/locales/zh.json`.
+`scripts/build-client.mjs` checks that both have exactly the same key set — a missing key would
+otherwise fall back to the other language mid-sentence — rejects CJK in the English file, and inlines
+both dictionaries into the single browser bundle. `lib/client.js` is generated; edit the JSON and
+rebuild.
+
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/git-bug/v1/overview` | GET | Repository, identity, counts, issues, availability. |
@@ -294,6 +308,7 @@ src/server/tools.js      the git_bug_* tool family
 src/server/prompt.js     the system-prompt section
 src/server/api.js        the panel's JSON API
 src/client/factory.js    browser half (slot registrations + panel)
+src/client/locales/      panel copy: en.json and zh.json, inlined into the bundle at build time
 src/client/styles.css    panel styles, inlined into the bundle at build time
 scripts/build-client.mjs wraps the browser half into the loader format and inlines styles.css
 scripts/stub-provider.mjs a DeepSeek-compatible stand-in used by the harness test
@@ -316,7 +331,7 @@ Suites:
 | `tests/git-bug.test.mjs` | The adapter against the real executable: create/read/comment/label/close round trips, long bodies over stdin, remote push into a second clone, failure classes, timeouts. |
 | `tests/format.test.mjs` | Text projections. |
 | `tests/labels.test.mjs` | The default label vocabulary and its formatting, including that it states it is a framework and not a rule. |
-| `tests/build.test.mjs` | The generated browser half: every stylesheet selector is present in the bundle, no CSS is authored in the factory, and the build is byte-deterministic. |
+| `tests/build.test.mjs` | The generated browser half: every stylesheet selector is present in the bundle, no CSS or translated text is authored in the factory, both locale dictionaries share one key set and keep to their own language, and the build is byte-deterministic. |
 | `tests/api.test.mjs` | The HTTP API on a real server: every endpoint, error statuses, identity bootstrap, sync round trip. |
 | `tests/plugin.test.mjs` | Activation: tool surface and schemas, prompt section content and ordering, route mount, headless composition, config validation. |
 | `tests/client.test.mjs` | The built browser half: loader handoff, slot registrations, visibility source, API error mapping, the Markdown body path with and without the shell's renderer, and a render of the panel with fetched issue data — including label filters, query pass-through, and the single sync control (skipped when no React install is resolvable). |
@@ -333,7 +348,7 @@ Runs below were executed in this repository on the date shown, inside `nix devel
 
 | Check | Command | Result |
 |---|---|---|
-| Test suite | `npm run check` | 55 tests, 55 pass, 0 fail |
+| Test suite | `npm run check` | 56 tests, 56 pass, 0 fail |
 | Live web profile | `dsh --profile web --patch <pkg>/cordis.patch.yml` against a scratch `DSH_HOME` | boots; `__DSH_BOOT__` carries the `dsh-git-bug` row at `/plugins/dsh-git-bug/client.js`, the bundle is served 200, `/git-bug/v1/overview` reports the bound repository, and API create/comment/status/label writes landed in git-bug |
 | ENTRY (static) | `npx -p dsh-standards dsh-standards . --scope entry --entry-claim static --runtime-version 0.2.2-rc.1` | `status=pass`, `DSH-ENTRY recognized`, blocking 0, WARN DSC-11 (`C-11.5`, see below) |
 | ENTRY (runtime) | `npx -p dsh-standards dsh-standards . --scope entry --entry-claim runtime --runtime <cordis>/lib/index.js --runtime-version 0.2.2-rc.1` | `status=pass`, `DSH-ENTRY runtime`, blocking 0; DSC-04/06/07/09/14 PASS; WARN DSC-08 (`C-8.2`, revision/epoch unchanged under L1) |
@@ -388,7 +403,7 @@ real; only its spelling is outside the scanner's trigger surface.
   `@deepseek-ai/dsh-client-ui-primitives` falls back to pre-wrapped plain text.
 - Labels are a flat string namespace: `component/` is a naming convention this vocabulary adds, not a
   git-bug hierarchy, and a colon inside a label needs quoting in git-bug's own query language.
-- Product copy is English, with a Simplified Chinese translation selected from the browser language.
+- Product copy ships in English and Simplified Chinese; the panel follows the shell's language setting, with English as fallback.
 
 ## License
 
