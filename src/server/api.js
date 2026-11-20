@@ -9,8 +9,7 @@
  * @module dsh-git-bug/server/api
  */
 
-import { GitBugFailure, GitBugFailureKind } from '../git-bug.js'
-import { SORT_KEYS } from '../query.js'
+import { GitBugFailure, GitBugFailureKind, SORT_KEYS } from '../git-bug.js'
 
 /** Refuse request bodies larger than this; issue bodies are small. */
 const MAX_BODY_BYTES = 1_000_000

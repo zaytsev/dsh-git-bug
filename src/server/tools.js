@@ -10,7 +10,6 @@
 
 import { GitBugFailure, GitBugFailureKind } from '../git-bug.js'
 import { formatVocabulary } from '../labels.js'
-import { qualifierSummary } from '../query.js'
 import { formatIssueDetail, formatIssueList } from '../format.js'
 
 /** Parameter schema shared by every id-taking tool. */
@@ -49,7 +48,7 @@ export function toolErrorText(error, context = {}) {
     case GitBugFailureKind.LOCKED:
       return `Another git-bug process holds this repository: ${error.message}. Wait a moment and retry.`
     case GitBugFailureKind.INVALID_FILTER:
-      return `Nothing ran: that filter is not valid for git-bug. ${error.message}`
+      return `git-bug rejected that filter: ${error.message}. A query is git-bug's own syntax; the structured parameters (status, labels, search) are the literal alternative.`
     default:
       return `git-bug failed: ${error.message}`
   }
@@ -139,7 +138,7 @@ export function registerTools(ctx, deps) {
       + 'This is the workspace\'s shared task list and the only way to see it: the system prompt does '
       + 'not carry the issue list, so call this before planning multi-step work, and again after a '
       + 'sync to see what other sessions or people changed. '
-      + 'Filters: status, labels, literal title terms, a git-bug query, and a result cap.',
+      + 'Filters: status, labels, literal title terms, git-bug\'s own query syntax, and a result cap.',
     parameters: {
       status: { type: 'string', enum: ['open', 'closed', 'all'], description: 'Only issues in this status. Default open+closed.' },
       labels: { type: 'array', items: { type: 'string' }, description: 'Only issues carrying every one of these labels.' },
@@ -150,8 +149,8 @@ export function registerTools(ctx, deps) {
       },
       query: {
         type: 'string',
-        description: 'git-bug query syntax, for what the parameters above cannot express, e.g. "label:component/ui sort:creation-asc". '
-          + `Qualifiers: ${qualifierSummary()}. A query is validated before git-bug runs; quote a term to search it literally.`,
+        description: 'git-bug\'s query syntax, passed to git-bug as positional terms, e.g. "label:component/ui sort:creation-asc". '
+          + 'Quote a term with spaces, as in title:"Render issue". Malformed syntax is reported by git-bug itself.',
       },
       limit: { type: 'integer', description: 'Maximum issues to return (default 50).' },
       sort: { type: 'string', enum: ['edit', 'creation', 'id'], description: 'Ordering key. Default edit.' },

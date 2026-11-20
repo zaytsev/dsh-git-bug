@@ -487,7 +487,7 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
   assert.deepEqual([...new Set(options)], expectedOptions)
 
   // Only two controls are visible until Advanced is opened: the status chips and
-  // the search box. Everything else waits behind the toggle.
+  // the filter box. Everything else waits behind the toggle.
   const beforeAdvanced = await driver.mount(overlay.component, panelProps)
   assert.equal(find(beforeAdvanced, node => node.props?.className === 'gb-cloud'), null, 'the label cloud is hidden')
   const advancedButton = buttonByText(beforeAdvanced, 'Advanced')
@@ -542,14 +542,15 @@ test('the panel renders repository truth and drives the API', { skip: realReact 
     assert.equal(button.props.disabled, true, 'no page to move to')
   }
 
-  // Every word is one title term: the search box cannot express a query.
-  const search = find(filtered, node => node.type === 'input' && node.props?.placeholder === 'Search titles')
-  assert.ok(search !== null, 'the search box says what it searches')
-  search.props.onChange({ target: { value: 'render  panel' } })
+  // The filter box is git-bug's query language: it sends the text through whole
+  // and lets the CLI read it, instead of flattening it into literal title terms.
+  const search = find(filtered, node => node.type === 'input' && node.props?.placeholder === 'Filter with git-bug syntax, e.g. label:ui')
+  assert.ok(search !== null, 'the search box says what it accepts')
+  search.props.onChange({ target: { value: 'label:ui render  panel' } })
   await driver.mount(overlay.component, panelProps)
   const terms = calls.filter(call => call.url.includes('/issues?')).at(-1)
-  assert.match(terms.url, /search=render/)
-  assert.match(terms.url, /search=panel/)
+  assert.equal(new URL(terms.url, 'http://panel.test').searchParams.get('query'), 'label:ui render  panel')
+  assert.doesNotMatch(terms.url, /search=/, 'the box is no longer flattened into literal title terms')
 
   // One sync control replaces the separate pull and push buttons, and it does
   // both directions itself, in order. The API keeps its explicit action.

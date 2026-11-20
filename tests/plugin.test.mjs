@@ -64,7 +64,8 @@ test('tool descriptions steer the agent to the shared task list', async () => {
   assert.match(listTool.description, /shared task list/)
   assert.match(listTool.description, /literal title terms/)
   assert.match(listTool.parameters.properties.search.description, /colon is matched literally/)
-  assert.match(listTool.parameters.properties.query.description, /status: label: author:/)
+  assert.match(listTool.parameters.properties.query.description, /git-bug's query syntax/)
+  assert.match(listTool.parameters.properties.query.description, /label:component\/ui/)
   assert.match(byName.get('git_bug_create').description, /`ai` marks work an agent owns/)
   assert.match(byName.get('git_bug_create').description, /kind \(bug, feature, enhancement, refactor, docs, todo\)/)
   assert.match(byName.get('git_bug_sync').description, /push|pull/)
@@ -344,15 +345,15 @@ test('promptSection false leaves the prompt untouched', async () => {
   assert.equal(fake.sections.length, 0)
   assert.equal(fake.tools.length, TOOL_NAMES.length)
 })
-test('a malformed query is answered with the vocabulary, not with the CLI', async () => {
+test('a malformed query is reported by git-bug, not guessed at by the plugin', async () => {
   const repoPath = await makeRepo()
   const fake = await activate(repoPath)
   const list = fake.tools.find(tool => tool.name === 'git_bug_list')
   await assert.rejects(
     () => list.execute({ query: 'status:' }, {}),
     (error) => {
-      assert.match(error.message, /Nothing ran/)
-      assert.match(error.message, /Qualifiers: status: label: author: actor: participant: title: metadata: no: sort:/)
+      assert.match(error.message, /git-bug rejected that filter/)
+      assert.match(error.message, /empty qualifier or value/)
       return true
     },
   )

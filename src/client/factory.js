@@ -36,7 +36,7 @@
 				open: "进行中",
 				closed: "已关闭",
 				all: "全部",
-				search: "搜索标题",
+				search: "按 git-bug 语法筛选，例如 label:ui",
 				advanced: "高级",
 				sort: "排序",
 				edited: "编辑时间",
@@ -85,7 +85,7 @@
 				open: "Open",
 				closed: "Closed",
 				all: "All",
-				search: "Search titles",
+				search: "Filter with git-bug syntax, e.g. label:ui",
 				advanced: "Advanced",
 				sort: "Sort",
 				edited: "Edited",
@@ -360,9 +360,9 @@
 				setError(null)
 				const params = new URLSearchParams()
 				if (next.status !== "all") params.set("status", next.status)
-				// Search text is literal: every word becomes one title term, so this box can
-				// never turn into git-bug's query language. Only the tools accept a query.
-				for (const term of next.query.trim().split(/\s+/).filter((value) => value.length > 0)) params.append("search", term)
+				// Filter text is git-bug's own query language: send it through as typed,
+				// and let git-bug parse it. Labels, status and ordering stay explicit flags.
+				if (next.query.trim().length > 0) params.set("query", next.query.trim())
 				for (const label of next.labels) params.append("label", label)
 				// Ordering and the page window belong to the server: the CLI sorts, we page.
 				params.set("sort", next.sort)

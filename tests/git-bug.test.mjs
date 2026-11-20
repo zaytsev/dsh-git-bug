@@ -218,7 +218,7 @@ test('a timed-out command is reported instead of hanging', async () => {
   )
 })
 
-test('a query is translated into flags, never forwarded as query syntax', async () => {
+test('structured filters are flags and the query text is passed through positionally', async () => {
   const seen = []
   const run = async ({ argv }) => {
     seen.push(argv.slice(1))
@@ -231,22 +231,35 @@ test('a query is translated into flags, never forwarded as query syntax', async 
     titles: ['status:'],
     query: 'label:component/ui label:priority:high sort:creation-asc "component/ui" https',
   })
-  // One argv, in full: every qualifier became a flag, every search term is a
-  // --title value, and the single bare word keeps full text search working.
-  // Nothing is handed to git-bug's parser, so a colon can never be reused as
-  // syntax — which is also why a legacy colon label survives here while it would
-  // need quoting in git-bug's own query language.
+  // One argv, in full: the explicit filters are flags, and the filter text keeps
+  // git-bug's own syntax as one positional argument per term. Quotes group words
+  // into a single term, and no token is interpreted by the plugin.
   assert.deepEqual(seen, [[
     'bug', '--format', 'json',
     '--status', 'open',
-    '--label', 'bug', '--label', 'component/ui', '--label', 'priority:high',
-    '--title', 'status:', '--title', 'component/ui',
-    '--by', 'creation', '--direction', 'asc',
-    'https',
+    '--label', 'bug',
+    '--title', 'status:',
+    '--by', 'edit', '--direction', 'desc',
+    'label:component/ui', 'label:priority:high', 'sort:creation-asc', 'component/ui', 'https',
   ]])
 })
 
-test('a caller-supplied ordering wins over the default, and a query sort over the flag default', async () => {
+test('the filter box keeps a quoted term together for git-bug', async () => {
+  const seen = []
+  const run = async ({ argv }) => {
+    seen.push(argv.slice(1))
+    return { code: 0, stdout: '[]', stderr: '' }
+  }
+  const api = createGitBug({ run, repoPath: '/tmp/repo' })
+  await api.list({ query: 'title:"Render issue" label:ui' })
+  assert.deepEqual(seen, [[
+    'bug', '--format', 'json',
+    '--by', 'edit', '--direction', 'desc',
+    'title:Render issue', 'label:ui',
+  ]])
+})
+
+test('a caller-supplied ordering wins over the default', async () => {
   const seen = []
   const run = async ({ argv }) => {
     seen.push(argv.slice(1))
@@ -255,29 +268,27 @@ test('a caller-supplied ordering wins over the default, and a query sort over th
   const api = createGitBug({ run, repoPath: '/tmp/repo' })
   await api.list({ sort: 'creation', direction: 'asc' })
   await api.list({})
-  await api.list({ query: 'sort:edit-asc' })
   assert.deepEqual(seen.map(args => args.slice(args.indexOf('--by'))), [
     ['--by', 'creation', '--direction', 'asc'],
     ['--by', 'edit', '--direction', 'desc'],
-    ['--by', 'edit', '--direction', 'asc'],
   ])
 })
 
-test('a malformed qualifier is answered with the vocabulary, not with a CLI error', async () => {
-  let calls = 0
-  const run = async () => {
-    calls += 1
-    return { code: 0, stdout: '[]', stderr: '' }
+test('a malformed qualifier is reported by git-bug and classified', async () => {
+  const seen = []
+  const run = async ({ argv }) => {
+    seen.push(argv.slice(1))
+    return { code: 1, stdout: '', stderr: 'Error: empty qualifier or value\n' }
   }
   const api = createGitBug({ run, repoPath: '/tmp/repo' })
   await assert.rejects(
     () => api.list({ query: 'status:' }),
     (error) => {
       assert.equal(error.kind, GitBugFailureKind.INVALID_FILTER)
-      assert.match(error.message, /empty value/)
-      assert.match(error.message, /status: label: author: actor: participant: title: metadata: no: sort:/)
+      assert.match(error.message, /empty qualifier or value/)
       return true
     },
   )
-  assert.equal(calls, 0, 'the command never starts, so no CLI diagnostic can surface')
+  assert.equal(seen.length, 1, 'the CLI owns the parser, so it runs and reports')
+  assert.equal(seen[0].at(-1), 'status:')
 })

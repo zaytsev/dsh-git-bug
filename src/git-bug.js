@@ -12,10 +12,11 @@
  * @module dsh-git-bug/git-bug
  */
 
-import { FilterError, parseQuery } from './query.js'
-
 /** The executable this adapter drives. */
 export const GIT_BUG_COMMAND = 'git-bug'
+
+/** Sort keys the list command accepts through --by. */
+export const SORT_KEYS = Object.freeze(['id', 'creation', 'edit'])
 
 /** Attempts allowed when another process holds the repository lock. */
 const LOCK_ATTEMPTS = 5
@@ -37,7 +38,7 @@ export const GitBugFailureKind = Object.freeze({
   TIMEOUT: 'timeout',
   /** Another git-bug process holds this repository's lock. */
   LOCKED: 'locked',
-  /** A filter this plugin refused to translate, so no command was run. */
+  /** git-bug refused the filter expression it was given. */
   INVALID_FILTER: 'invalid-filter',
   /** The command failed for any other reason. */
   COMMAND_FAILED: 'command-failed',
@@ -69,6 +70,7 @@ const DIAGNOSTICS = [
   { kind: GitBugFailureKind.NO_IDENTITY, pattern: /No identity is set/i },
   { kind: GitBugFailureKind.LOCKED, pattern: /already locked by the process/i },
   { kind: GitBugFailureKind.NOT_FOUND, pattern: /must provide a bug id|no bug found|not found|ambiguous/i },
+  { kind: GitBugFailureKind.INVALID_FILTER, pattern: /unknown qualifier|empty qualifier or value/i },
 ]
 
 /** Classify one failed invocation from its stderr text. */
@@ -178,6 +180,42 @@ function diagnosticOf(text, fallback) {
   const line = text.split('\n').map(part => part.trim()).find(part => part.length > 0)
   if (line === undefined) return fallback
   return line.replace(/^Error:\s*/i, '')
+}
+
+/**
+ * Split free-form filter text into the positional terms git-bug's parser expects.
+ *
+ * git-bug reads one query term per argument, so `label:ui status:open` has to
+ * arrive as two arguments, never one. Quotes group words into a single term the
+ * way a shell would, so `title:"Render issue"` reaches the CLI as
+ * `title:Render issue`. Nothing here knows what a qualifier means: that is
+ * git-bug's job, and its diagnostics are passed through unchanged.
+ * @param text - the filter text, possibly empty.
+ * @returns one argument per term, in order.
+ */
+function splitQuery(text) {
+  const terms = []
+  let current = ''
+  let quote = null
+  for (const char of text) {
+    if (quote !== null) {
+      if (char === quote) quote = null
+      else current += char
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (/\s/.test(char)) {
+      if (current.length > 0) terms.push(current)
+      current = ''
+      continue
+    }
+    current += char
+  }
+  if (current.length > 0) terms.push(current)
+  return terms
 }
 
 /**
@@ -315,39 +353,22 @@ export function createGitBug(options) {
     /**
      * List bugs, optionally filtered.
      *
-     * Two kinds of filter arrive here and they never mix: the structured
-     * parameters (status, labels, literal title terms) and an optional git-bug
-     * query string, which is parsed and validated before anything runs. A term
-     * the caller calls "search" is matched against titles with --title, so it is
-     * never handed to git-bug's parser and never has to be escaped.
-     * @param query - structured filters, literal title terms, a query string, and a result cap.
+     * The structured parameters (status, labels, literal title terms, ordering)
+     * become git-bug flags. Free-form filter text becomes positional arguments
+     * for git-bug's own query parser, so the plugin never re-implements the
+     * dialect and never second-guesses the CLI's diagnostics.
+     * @param query - structured filters, free-form query text, and a result cap.
      * @returns matching bug summaries, newest edit first when no order is given.
      */
     async list(query = {}) {
       const args = ['bug', '--format', 'json']
-      let filter
-      try {
-        filter = parseQuery(typeof query.query === 'string' ? query.query : '')
-      } catch (error) {
-        if (error instanceof FilterError) {
-          throw new GitBugFailure(error.message, {
-            kind: GitBugFailureKind.INVALID_FILTER,
-            argv: [GIT_BUG_COMMAND, ...args],
-          })
-        }
-        throw error
-      }
-      const status = query.status === 'open' || query.status === 'closed' ? query.status : filter.status
-      if (status === 'open' || status === 'closed') args.push('--status', status)
-      for (const label of [...(query.labels ?? []), ...filter.labels]) args.push('--label', String(label))
-      for (const author of filter.authors) args.push('--author', author)
-      for (const actor of filter.actors) args.push('--actor', actor)
-      for (const participant of filter.participants) args.push('--participant', participant)
-      for (const metadata of filter.metadata) args.push('--metadata', metadata)
-      for (const value of filter.absence) args.push('--no', value)
-      for (const title of [...(query.titles ?? []), ...filter.titles]) args.push('--title', String(title))
-      args.push('--by', query.sort ?? filter.sort ?? 'edit', '--direction', query.direction ?? filter.direction ?? 'desc')
-      for (const term of filter.terms) args.push(term)
+      const status = query.status === 'open' || query.status === 'closed' ? query.status : null
+      if (status !== null) args.push('--status', status)
+      for (const label of query.labels ?? []) args.push('--label', String(label))
+      for (const title of query.titles ?? []) args.push('--title', String(title))
+      args.push('--by', query.sort ?? 'edit', '--direction', query.direction ?? 'desc')
+      // The filter box is git-bug's query language; the CLI owns it.
+      for (const term of splitQuery(typeof query.query === 'string' ? query.query : '')) args.push(term)
       const raw = await execJson(args)
       const issues = (Array.isArray(raw) ? raw : []).map(issueSummaryOf).filter(issue => issue !== null)
       const limit = query.limit ?? issues.length

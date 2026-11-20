@@ -49,12 +49,17 @@ test('serves the overview, creates an issue, comments, and closes it', async () 
     assert.equal(listed.issues.length, 1)
     assert.equal(listed.issues[0].title, 'Panel task')
 
-    // The search box is literal: a half-typed qualifier is a title term, so it
-    // matches nothing instead of returning git-bug's parse error.
+    // The search parameter is literal: a half-typed qualifier is a title term,
+    // so it matches nothing instead of returning git-bug's parse error.
     const literal = await (await fetch(`${api.base}/issues?status=open&search=${encodeURIComponent('status:')}`)).json()
     assert.deepEqual(literal.issues, [])
     const byLabel = await (await fetch(`${api.base}/issues?label=agent-task`)).json()
     assert.equal(byLabel.issues.length, 1, 'label filters are structured')
+
+    // The filter box is git-bug's own query language: the API passes it through,
+    // so a label qualifier filters and the CLI is the one that reads it.
+    const byQuery = await (await fetch(`${api.base}/issues?status=open&query=${encodeURIComponent('label:agent-task')}`)).json()
+    assert.equal(byQuery.issues.length, 1, 'a label: qualifier reaches git-bug and filters')
 
     // Ordering and paging are the panel's parameters, not client-side sorting.
     for (const query of ['sort=creation&direction=asc', 'sort=id&direction=desc', 'sort=nonsense&direction=sideways']) {
@@ -62,14 +67,13 @@ test('serves the overview, creates an issue, comments, and closes it', async () 
       assert.equal(ordered.issues.length, 1, `${query} still returns the match`)
     }
 
-    // An explicit query is validated before it reaches the CLI, so the panel
-    // shows the accepted vocabulary rather than a raw git-bug diagnostic.
+    // A query the CLI rejects keeps its classification, and its diagnostic is
+    // the CLI's own — the plugin has no vocabulary of its own to consult.
     const rejected = await fetch(`${api.base}/issues?query=${encodeURIComponent('status:')}`)
     assert.equal(rejected.status, 400)
     const failure = await rejected.json()
     assert.equal(failure.kind, 'invalid-filter')
-    assert.match(failure.error, /empty value/)
-    assert.match(failure.error, /status: label:/)
+    assert.match(failure.error, /empty qualifier or value/)
     assert.deepEqual(listed.issues[0].labels, ['agent-task'])
 
     const id = created.humanId
