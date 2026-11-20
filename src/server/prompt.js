@@ -1,14 +1,7 @@
 /**
- * System-prompt section: what git-bug is here and how to drive it.
- *
- * The text is a pure function of the resolved configuration. It deliberately
- * carries no repository state — no counts, no identity, no issue list, no
- * availability probe result. Transformer caches match request prefixes
- * byte-for-byte, so any state read here would rewrite the prompt in place and
- * invalidate the cached prefix of every request after it, including the whole
- * conversation history. Live state reaches the model the cache-safe way
- * instead: through `git_bug_list` and the other tools, whose results append at
- * the tail of the conversation.
+ * The system-prompt section. It is a pure function of config: provider caches
+ * match prefixes byte-for-byte, so repository state here would invalidate the
+ * cached prefix of every later request.
  * @module dsh-git-bug/server/prompt
  */
 

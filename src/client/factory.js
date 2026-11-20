@@ -1,7 +1,4 @@
-		// dsh-git-bug browser half: an Issues panel in the web client.
-		// Registered through the slot system: one sidebar footer action opens one
-		// shell overlay. All data comes from the plugin's own JSON API (`/git-bug/v1`),
-		// so the panel needs no RPC plumbing and renders repository truth directly.
+		// Browser half: the Issues panel, registered as a sidebar action and a shell overlay.
 		const react = require("react")
 		const h = react.createElement
 		// Issue text is untrusted Markdown, so it is rendered by the shell's own renderer
@@ -23,10 +20,8 @@
 		/** Matches fetched in one request; paging happens over this set, client side. */
 		const PAGE_LIMIT = 200
 
-		/** Locale namespace this panel registers with the shell's locale service. */
 		const LOCALE_NAMESPACE = "dsh-git-bug"
 
-		/** Substitute {name} placeholders in one locale template. */
 		function interpolate(template, values) {
 			if (values === undefined) return template
 			return template.replace(/\{(\w+)\}/g, (match, name) => (values[name] === undefined ? match : String(values[name])))
@@ -35,7 +30,6 @@
 		/** English fallback until apply() binds the shell's active-locale translator. */
 		let boundT = (key, values) => interpolate(LOCALES.en[key] ?? key, values)
 
-		/** Translate one caption; the wrapper keeps the late locale binding visible to components. */
 		function t(key, values) {
 			return boundT(key, values)
 		}
@@ -90,7 +84,6 @@
 			return h("span", { className: "gb-label" }, props.children)
 		}
 
-		/** Sidebar footer entry point: one button that opens the overlay. */
 		function FooterAction(props) {
 			const label = t("issues")
 			const wide = props.wide !== false
@@ -114,7 +107,6 @@
 			)
 		}
 
-		/** One issue row in the list. */
 		function IssueRow(props) {
 			const issue = props.issue
 			const labels = issue.labels.map((label) => h(Label, { key: label }, label))
@@ -137,7 +129,6 @@
 			)
 		}
 
-		/** Full issue detail with its comments and the write affordances. */
 		function IssueDetail(props) {
 			const detail = props.detail
 			const [comment, setComment] = react.useState("")
@@ -203,7 +194,6 @@
 			)
 		}
 
-		/** Create form. */
 		function CreateForm(props) {
 			const [title, setTitle] = react.useState("")
 			const [message, setMessage] = react.useState("")
@@ -243,7 +233,6 @@
 			)
 		}
 
-		/** The dashboard itself: filters, list, detail, sync. */
 		function Panel(props) {
 			const [overview, setOverview] = react.useState(null)
 			const [list, setList] = react.useState(null)
@@ -283,7 +272,6 @@
 					.catch(report)
 			}, [])
 
-			/** Reload the list with the filters as they stand now. */
 			const reload = () => load({ status, query, labels: labelFilters, sort, direction })
 
 			react.useEffect(() => {
@@ -507,16 +495,12 @@
 			)
 		}
 
-		/** Overlay entry point: renders nothing while the panel is closed. */
 		function Overlay(props) {
 			const visible = props.useVisibility((value) => value)
 			return visible ? h(Panel, { hide: props.hide, loadOverview: props.loadOverview }) : null
 		}
 
-		/**
-		 * Minimal observable source (getSnapshot/subscribe) with a setter that
-		 * publishes only real transitions. The renderer binds these to hooks.
-		 */
+		/** A minimal getSnapshot/subscribe source; set() publishes only real changes. */
 		function createObservable(initial) {
 			let value = initial
 			const listeners = new Set()
@@ -534,7 +518,6 @@
 			}
 		}
 
-		/** Panel visibility, as data plus callbacks. */
 		function createVisibility() {
 			const source = createObservable(false)
 			return {

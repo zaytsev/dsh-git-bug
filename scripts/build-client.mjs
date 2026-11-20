@@ -1,19 +1,7 @@
 #!/usr/bin/env node
 /**
- * Build the browser half.
- *
- * The web client loads plugin bundles as classic scripts that register a
- * factory with `window.__ModuleLoader__`; the factory body receives a
- * synchronous `require` bound to the module table. This script wraps
- * `src/client/factory.js` — that body verbatim — in the registration header and
- * the `module.exports` footer, and inlines `src/client/styles.css` as a string
- * constant inside the factory closure.
- *
- * The CSS inlining mirrors the first-party client preset, which compiles
- * `.module.css` files at build time and emits the rules as a string next to the
- * code: styles are authored, reviewed and diffed as CSS, and the browser still
- * receives one script. There is no bundler here, so no class-name hashing — the
- * `gb-` prefix is this plugin's namespace by convention.
+ * Wrap src/client/factory.js in the client loader's registration format and
+ * inline the stylesheet and locale dictionaries.
  * @module dsh-git-bug/scripts/build-client
  */
 
@@ -21,10 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** Package root: this file lives in `scripts/`. */
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-
-/** Registration id the boot graph expects: the loader row name. */
 const ID = 'dsh-git-bug'
 
 /** Locale ids the panel ships. English is the DSH baseline fallback. */

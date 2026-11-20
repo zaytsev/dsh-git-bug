@@ -1,22 +1,14 @@
 /**
- * Model-facing cues that make the issue list impossible to overlook.
- *
- * Both travel as injected user-role context, never as prompt text: injected
- * messages append at the tail of the conversation, so they cannot move the
- * cached prefix the way a rewritten system prompt would.
+ * Injected user-role cues. They append at the tail, so the cached prompt prefix
+ * stays put.
  * @module dsh-git-bug/server/cue
  */
 
 import { countLabel } from '../format.js'
 
 /**
- * Build one producer-sourced user message.
- *
- * Session format V4 retires the catch-all `kind: 'plugin'` source: every
- * producer owns a stable kind. The V3→V4 migration names an unknown plugin
- * `plugin:<name>`, so using that same kind here keeps historical cues and new
- * cues identical to consumers. The session freezes and logs the message, so it
- * is replayable like any other model-visible input.
+ * Build one injected user message. V4 needs a producer-owned source kind; a
+ * `plugin:<name>` kind matches what the V3→V4 migration assigns this plugin.
  * @param producer - plugin name recorded as the producer kind.
  * @param text - the cue.
  * @returns the message to inject.

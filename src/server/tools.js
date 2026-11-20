@@ -1,10 +1,5 @@
 /**
- * Model-facing git-bug tools.
- *
- * Every tool is one thin projection of the repository adapter: it validates the
- * few constraints the JSON Schema cannot express, calls one adapter method, and
- * renders a text block. Mutations need no cache to invalidate: the prompt
- * assembly and the GUI panel reflect the change.
+ * The git_bug_* tool family: one adapter call and one text projection each.
  * @module dsh-git-bug/server/tools
  */
 

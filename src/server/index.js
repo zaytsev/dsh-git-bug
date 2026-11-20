@@ -1,24 +1,8 @@
 /**
- * dsh-git-bug — git-bug issues for the current workspace.
- *
- * One plugin activation owns one repository (config `repoPath`, default: the
- * harness process working directory). It contributes three things:
- *
- * 1. the `git_bug_*` tool family, so the agent can read and write issues;
- * 2. a system-prompt section that states how to use them, so the agent treats
- *    issues as its shared, persistent task list;
- * 3. a same-origin JSON API under `apiPath`, which the browser half (the
- *    Issues panel) drives.
- *
- * The prompt section is a pure function of the configuration and the tools
- * carry the live state. That split is deliberate: a provider matches a request
- * against its cached prefix byte-for-byte, so state in the prompt would rewrite
- * it in place and invalidate the cached prefix of every later request, while
- * tool results append at the tail and keep the prefix intact.
- *
- * The `git-bug` executable is an external dependency: it is resolved through
- * the subprocess capability, reported by the API, and reported by any tool that
- * cannot run.
+ * One activation owns one repository and contributes the git_bug_* tools, the
+ * system-prompt section, and the panel's JSON API. The prompt stays a pure
+ * function of config; live state travels through tool results and injected
+ * cues so the cached prefix never moves.
  * @module dsh-git-bug
  */
 
@@ -143,12 +127,9 @@ export function apply(ctx, rawConfig) {
   }
 
   if (config.sessionCue) {
-    // Seeding context at session start puts the rule, and the counts when they
-    // are already known, in front of the model without touching the prompt: an
-    // injected message appends at the tail, so the cached prefix stays
-    // byte-stable. Injection is synchronous because the session's first step
-    // claims its messages immediately; the read that feeds later sessions runs
-    // in the background.
+    // Injected messages append at the tail, so the cached prompt prefix stays
+    // put. Injection is synchronous; the read that feeds later sessions runs in
+    // the background.
     let latest = null
     const refresh = () => {
       repo.overview().then((overview) => { latest = overview }).catch(() => {

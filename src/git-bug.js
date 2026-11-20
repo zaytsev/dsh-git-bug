@@ -1,14 +1,7 @@
 /**
- * git-bug adapter: runs the `git-bug` CLI inside one repository and normalizes
- * its output into plain JSON-compatible values.
- *
- * The module owns no process, timer, or filesystem handle. Every command goes
- * through the injected `run`, so the harness executes through
- * `ctx.subprocess` and the test suite executes through `node:child_process`.
- *
- * Verified against git-bug v0.11.0, whose CLI is `git-bug bug …` (v0.7 and
- * earlier used `git-bug ls/new/show`); the command shapes here are that
- * version's.
+ * git-bug CLI adapter. Every command goes through the injected `run`, so the
+ * harness uses ctx.subprocess and tests use node:child_process. Command shapes
+ * target git-bug v0.11.0 (the `git-bug bug …` CLI).
  * @module dsh-git-bug/git-bug
  */
 
@@ -183,13 +176,8 @@ function diagnosticOf(text, fallback) {
 }
 
 /**
- * Split free-form filter text into the positional terms git-bug's parser expects.
- *
- * git-bug reads one query term per argument, so `label:ui status:open` has to
- * arrive as two arguments, never one. Quotes group words into a single term the
- * way a shell would, so `title:"Render issue"` reaches the CLI as
- * `title:Render issue`. Nothing here knows what a qualifier means: that is
- * git-bug's job, and its diagnostics are passed through unchanged.
+ * Split filter text into one argument per term; quotes group words. Qualifier
+ * meaning stays with git-bug.
  * @param text - the filter text, possibly empty.
  * @returns one argument per term, in order.
  */
@@ -351,12 +339,8 @@ export function createGitBug(options) {
     },
 
     /**
-     * List bugs, optionally filtered.
-     *
-     * The structured parameters (status, labels, literal title terms, ordering)
-     * become git-bug flags. Free-form filter text becomes positional arguments
-     * for git-bug's own query parser, so the plugin never re-implements the
-     * dialect and never second-guesses the CLI's diagnostics.
+     * List bugs, optionally filtered. Structured filters become flags; free
+     * text becomes positional arguments for git-bug's own parser.
      * @param query - structured filters, free-form query text, and a result cap.
      * @returns matching bug summaries, newest edit first when no order is given.
      */
@@ -367,10 +351,8 @@ export function createGitBug(options) {
       for (const label of query.labels ?? []) args.push('--label', String(label))
       for (const title of query.titles ?? []) args.push('--title', String(title))
       args.push('--by', query.sort ?? 'edit', '--direction', query.direction ?? 'desc')
-      // The filter box is git-bug's query language; the CLI owns it. The
-      // separator keeps a bare term that happens to equal a subcommand (`label`,
-      // `show`, `status`, ...) from being dispatched as that command before the
-      // query parser sees it.
+      // A bare term can equal a subcommand (`label`, `show`, ...); `--` keeps
+      // Cobra from dispatching it before the query parser sees it.
       const terms = splitQuery(typeof query.query === 'string' ? query.query : '')
       if (terms.length > 0) {
         args.push('--')

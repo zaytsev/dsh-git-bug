@@ -1,11 +1,6 @@
 /**
- * Same-origin HTTP API behind the GUI Issues panel.
- *
- * Every route is a thin JSON projection of the repository adapter, mounted as
- * one prefix route on the harness web server so the panel needs no RPC
- * plumbing. Failures keep their classification: a 404 means "no such bug", a
- * 409 means "the repository is not writable yet" (no identity / not a git
- * repository), and a 503 means git-bug itself is missing.
+ * JSON API behind the Issues panel. Adapter failures keep their status class:
+ * 404 no bug, 409 repository not writable, 503 git-bug missing.
  * @module dsh-git-bug/server/api
  */
 
