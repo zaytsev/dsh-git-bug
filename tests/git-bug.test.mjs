@@ -240,7 +240,7 @@ test('structured filters are flags and the query text is passed through position
     '--label', 'bug',
     '--title', 'status:',
     '--by', 'edit', '--direction', 'desc',
-    'label:component/ui', 'label:priority:high', 'sort:creation-asc', 'component/ui', 'https',
+    '--', 'label:component/ui', 'label:priority:high', 'sort:creation-asc', 'component/ui', 'https',
   ]])
 })
 
@@ -255,7 +255,24 @@ test('the filter box keeps a quoted term together for git-bug', async () => {
   assert.deepEqual(seen, [[
     'bug', '--format', 'json',
     '--by', 'edit', '--direction', 'desc',
-    'title:Render issue', 'label:ui',
+    '--', 'title:Render issue', 'label:ui',
+  ]])
+})
+
+test('a bare subcommand name stays a query term, not a command', async () => {
+  const seen = []
+  const run = async ({ argv }) => {
+    seen.push(argv.slice(1))
+    return { code: 0, stdout: '[]', stderr: '' }
+  }
+  const api = createGitBug({ run, repoPath: '/tmp/repo' })
+  await api.list({ query: 'label' })
+  // Without the separator git-bug dispatches its `label` subcommand and then
+  // rejects the leading --format flag ("unknown flag: --format").
+  assert.deepEqual(seen, [[
+    'bug', '--format', 'json',
+    '--by', 'edit', '--direction', 'desc',
+    '--', 'label',
   ]])
 })
 
@@ -290,5 +307,6 @@ test('a malformed qualifier is reported by git-bug and classified', async () => 
     },
   )
   assert.equal(seen.length, 1, 'the CLI owns the parser, so it runs and reports')
+  assert.ok(seen[0].includes('--'), 'the query terms follow the separator')
   assert.equal(seen[0].at(-1), 'status:')
 })

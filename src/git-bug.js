@@ -367,8 +367,15 @@ export function createGitBug(options) {
       for (const label of query.labels ?? []) args.push('--label', String(label))
       for (const title of query.titles ?? []) args.push('--title', String(title))
       args.push('--by', query.sort ?? 'edit', '--direction', query.direction ?? 'desc')
-      // The filter box is git-bug's query language; the CLI owns it.
-      for (const term of splitQuery(typeof query.query === 'string' ? query.query : '')) args.push(term)
+      // The filter box is git-bug's query language; the CLI owns it. The
+      // separator keeps a bare term that happens to equal a subcommand (`label`,
+      // `show`, `status`, ...) from being dispatched as that command before the
+      // query parser sees it.
+      const terms = splitQuery(typeof query.query === 'string' ? query.query : '')
+      if (terms.length > 0) {
+        args.push('--')
+        for (const term of terms) args.push(term)
+      }
       const raw = await execJson(args)
       const issues = (Array.isArray(raw) ? raw : []).map(issueSummaryOf).filter(issue => issue !== null)
       const limit = query.limit ?? issues.length

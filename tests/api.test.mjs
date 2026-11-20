@@ -60,6 +60,8 @@ test('serves the overview, creates an issue, comments, and closes it', async () 
     // so a label qualifier filters and the CLI is the one that reads it.
     const byQuery = await (await fetch(`${api.base}/issues?status=open&query=${encodeURIComponent('label:agent-task')}`)).json()
     assert.equal(byQuery.issues.length, 1, 'a label: qualifier reaches git-bug and filters')
+    const subcommandWord = await (await fetch(`${api.base}/issues?query=${encodeURIComponent('label')}`)).json()
+    assert.deepEqual(subcommandWord.issues, [], 'a bare subcommand name is searched, not dispatched')
 
     // Ordering and paging are the panel's parameters, not client-side sorting.
     for (const query of ['sort=creation&direction=asc', 'sort=id&direction=desc', 'sort=nonsense&direction=sideways']) {
